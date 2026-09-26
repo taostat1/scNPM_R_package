@@ -1,0 +1,22 @@
+# Compiled objects
+src/*.o
+src/*.dll
+src/*.so
+*.o
+*.dll
+
+# R history and workspace
+.Rhistory
+.RData
+.Rproj.user
+
+# RStudio
+*.Rproj
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artefacts
+*.tar.gz
+*.zip

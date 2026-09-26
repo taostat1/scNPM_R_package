@@ -1,0 +1,38 @@
+Package: scNPM
+Type: Package
+Title: Single-Cell Network Propensity Matching
+Version: 1.0.5
+Date: 2026-09-26
+Authors@R: c(
+    person(
+      given = "Tao",
+      family = "Liu",
+      email = "25210690190@m.fudan.edu.cn",
+      role = c("aut", "cre")
+    )
+  )
+Description: Estimates and compares heterogeneous gene conditional-dependence
+    networks from single-cell expression data. A latent Gaussian mixture and
+    probit observation mechanism represent cellular heterogeneity and zero
+    observations. Protein interaction information supplies edge-specific prior
+    weights, while network propensity matching links cell clusters across
+    conditions and guides adaptation. Staged inference freezes stable matching,
+    disables feedback, and retains baseline-model samples for posterior
+    directional error selection. Functions assess balance, record criterion
+    diagnostics, and visualize within-condition and differential networks.
+License: GPL (>= 3)
+Encoding: UTF-8
+LazyData: true
+LazyDataCompression: xz
+Imports: Rcpp (>= 1.0.10), Matrix, igraph (>= 1.3.0), ggplot2 (>=
+        3.3.0), ggrepel (>= 0.9.0), scales (>= 1.2.0), stats, utils,
+        tools
+LinkingTo: Rcpp, RcppArmadillo (>= 0.12.6.4.0), RcppParallel (>= 5.1.7)
+SystemRequirements: C++17, OpenMP
+Depends: R (>= 4.0.0)
+URL: https://github.com/taostat1/scNPM_R_package
+BugReports: https://github.com/taostat1/scNPM_R_package/issues
+Suggests: testthat (>= 3.0.0)
+Config/testthat/edition: 3
+Config/roxygen2/version: 8.1.0
+NeedsCompilation: yes
