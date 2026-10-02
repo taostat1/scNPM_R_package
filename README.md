@@ -1,6 +1,6 @@
 # scNPM: Single-Cell Network Propensity Matching
 
-Version **1.0.5** estimates heterogeneous gene conditional-dependence networks
+Version **1.0.6** estimates heterogeneous gene conditional-dependence networks
 and compares matched clusters across two conditions.
 
 ## Installation
@@ -36,10 +36,10 @@ For a separately supplied package archive, use:
 
 ```r
 # Built source archive
-install.packages("scNPM_1.0.5.tar.gz", repos = NULL, type = "source")
+install.packages("scNPM_1.0.6.tar.gz", repos = NULL, type = "source")
 
 # Windows binary archive, if supplied for your R version
-# install.packages("scNPM_1.0.5.zip", repos = NULL, type = "win.binary")
+# install.packages("scNPM_1.0.6.zip", repos = NULL, type = "win.binary")
 ```
 
 Source installation requires R >= 4.0 and a compatible C++17 toolchain;
@@ -113,7 +113,7 @@ fit <- run_scNPM(
   network_covariates = "all_reference", matching_method = "lexicographic",
   differential_method = "bayes_fdr", fdr_level = 0.05,
   fdr_scope = "frozen", fdr_rule = "delta_threshold",
-  diagnostic_every = 10, ds_seed = 123
+  group_fdr_level = 0.05, diagnostic_every = 10, ds_seed = 123
 )
 ```
 
@@ -129,12 +129,13 @@ stability check. Runtime depends on the data, iteration count and hardware.
 fit$matching_result_df                 # Reported pairs and final-state SMDs
 fit$matching_objective                 # Maximum and total SMD for that map
 fit$sampling_schedule                 # Freeze and retained-sample schedule
+fit$group_fdr$summary                  # Separate BFDR for each group network
 fit$differential_fdr$status
 fit$differential_fdr$threshold         # Strict |delta_p| > threshold
 fit$differential_fdr$estimated_error_bound
 head(fit$differential_fdr$selected)
 compute_qf_smd(fit)                    # Each network feature, by matched pair
-fit$smd_covariate_results              # Measured QC covariate balance
+fit$smd_covariate_results              # QC and network-feature balance
 ```
 
 A row of `differential_fdr$selected` is one unordered gene pair in one matched
@@ -157,6 +158,20 @@ saveRDS(fit, file.path(out_dir, "fit.rds"))
 write_csv(fit$matching_result_df, "matching.csv")
 write_csv(compute_qf_smd(fit), "network_feature_smd.csv")
 write_csv(fit$smd_covariate_results, "qc_covariate_smd.csv", row_names = TRUE)
+write_csv(fit$group_fdr$summary, "group_bfdr_summary.csv")
+write_csv(fit$group_fdr$table, "group_all.csv")
+write_csv(fit$group_fdr$selected, "group_selected.csv")
+set.seed(123)
+for (network_name in names(fit$group_fdr$networks)) {
+  net <- fit$group_fdr$networks[[network_name]]
+  write_csv(net$mask, paste0("group_", network_name, "_mask.csv"), row_names = TRUE)
+  if (!any(net$mask)) next
+  p <- plot_group_network(net)
+  if (!is.null(p)) ggplot2::ggsave(
+    file.path(out_dir, paste0("group_", network_name, ".pdf")),
+    plot = p, width = 7, height = 5
+  )
+}
 write_csv(fit$differential_fdr$table, "differential_all.csv")
 write_csv(fit$differential_fdr$selected, "differential_selected.csv")
 write_csv(fit$differential_fdr$threshold_curve, "bfdr_threshold_curve.csv")
@@ -208,18 +223,43 @@ when selected edges exist. Solid edges denote treatment enrichment and dashed
 edges denote control enrichment. The original `diff_matrix` carries the BFDR
 selection masks; passing it directly preserves the selected set.
 
-To plot an individual group network using the package's descriptive display
-threshold of posterior allocation frequency >= 0.5:
+Group-network plots use their saved BFDR masks:
 
 ```r
-p <- plot_group_network(fit$edge_treat_est[, , 1], fit$gene_names,
-                        group_type = "treatment")
-if (!is.null(p)) print(p)
+plot_group_network(fit$group_fdr$networks$treatment_1)
+plot_group_network(fit$group_fdr$networks$control_1)
+fit$group_fdr$summary
 ```
 
-This group-network plotting threshold is separate from the differential BFDR
-selection above. `plot_group_network()` does not itself perform group-network
-BFDR selection.
+For each condition and subtype, the selection ranks the marginal Rao-Blackwell
+slab probabilities and retains the largest complete tie-block prefix whose
+mean `1 - probability` is at most `group_fdr_level` (default 0.05). Inclusion
+uses `probability >= cutoff`. Each of the eight networks for K = 4 has its own
+BFDR calculation. Selection takes place on the full panel; use the saved mask
+when extracting subnetworks or calculating gene-panel sensitivity.
+
+`edge_treat_est` and `edge_ctrl_est` remain empirical allocation-frequency
+arrays for compatibility. They are not the new BFDR masks. A raw matrix passed
+to `plot_group_network()` without a saved mask raises an informative error.
+The former descriptive plot remains available explicitly:
+
+```r
+plot_group_network(fit$edge_treat_est[, , 1], fit$gene_names,
+                   selection = "frequency", frequency_threshold = 0.5)
+```
+
+Existing staged 1.0.5 results that contain `joint_edge_probabilities` can be
+updated without resampling:
+
+```r
+# fit <- readRDS("previous_fit.rds")
+fit$group_fdr <- select_group_edges(fit, fdr_level = 0.05)
+plot_group_network(fit$group_fdr$networks$treatment_1)
+```
+
+The selector reconstructs the marginal means using `p10 + p11` for treatment
+and `p01 + p11` for control, checks consistency across counterparts, and does
+not substitute empirical allocation frequencies for those probabilities.
 
 ### Files written by the example
 
@@ -227,7 +267,10 @@ BFDR selection.
 | --- | --- |
 | `fit.rds` | Complete result, including selection attributes and provenance; reload with `readRDS()`. |
 | `matching.csv` | One-to-one cluster correspondence and final-state SMD. |
-| `network_feature_smd.csv`, `qc_covariate_smd.csv` | Balance for the network-reference features and measured covariates. |
+| `network_feature_smd.csv`, `qc_covariate_smd.csv` | Network-feature balance and the combined QC/network covariate balance matrix. |
+| `group_bfdr_summary.csv`, `group_selected.csv`, `group_all.csv` | Per-network cutoffs and BFDR, selected edges and the full marginal edge table. |
+| `group_treatment_*.pdf`, `group_control_*.pdf` | BFDR-selected group networks, when nonempty. |
+| `group_treatment_*_mask.csv`, `group_control_*_mask.csv` | Saved symmetric selection masks, including empty networks. |
 | `differential_all.csv` | All tested gene-pair/cluster items, their probabilities, contrasts, errors and selection flags. |
 | `differential_selected.csv` | Only selected differential associations. |
 | `bfdr_threshold_curve.csv` | Candidate cutoffs, edge counts, mean errors and the chosen cutoff. |
@@ -253,7 +296,8 @@ script. See the field reference below for parameter and network summaries.
    restores the edge-specific baseline PPI weights. Finish at least
    `final_burnin` iterations under this model before retaining the last
    `num_save` draws. The frozen matching remains the reported correspondence.
-4. Select directional differential edges from final-stage joint edge-state
+4. Select group edges separately for each condition/subtype using marginal
+   posterior errors. Select directional differential edges from final-stage joint edge-state
    probabilities, across all K clusters as one family.
 
 The final sampling target is the baseline model without counterpart feedback.
@@ -376,7 +420,7 @@ The returned list contains the following commonly used results:
 | `theta_treat_est`, `theta_ctrl_est`, `theta_est` | Retained latent-expression summaries for cells. |
 | `group_treat_est`, `group_ctrl_est`, `group_est` | Cell cluster assignments. |
 | `matching_result_df`, `match_map`, `smd_results` | Reported correspondence and final-state propensity-score balance. |
-| `smd_covariate_results`, `network_covariates` | QC balance and the network-reference features used in matching. |
+| `smd_covariate_results`, `network_covariates` | Balance of all QC/network covariates and the network-reference values used in matching. |
 | `edge_diff_networks` | One entry per matched pair, containing the contrast matrix, treatment/control edge lists and counts. |
 | `provenance` | Version, seed, settings, timestamps, thread information and input fingerprints. |
 | `Result` | Retained sampler output and trace summaries; not a copy of every state from every iteration. |
@@ -390,6 +434,7 @@ Staged inference and selection also return:
 | `matching_history` | Per-iteration map, fixed after freezing. |
 | `criterion_trace` | Augmented criterion components at recorded iterations. |
 | `joint_edge_probabilities` | p00, p10, p01, p11 for every cluster pair, empirical checks and batch means. |
+| `group_fdr` | Marginal probabilities, per-network masks, summary, selected/all edge tables and threshold curves; NULL in coupled mode. |
 | `differential_fdr` | Edge table, threshold, full threshold curve, selections, target, scope and status. |
 | `smd_cost_matrix`, `frozen_smd_cost_matrix` | All pair costs at the final state and at the freezing iteration. |
 | `matching_objective` | Final-state maximum/total SMD under the reported map; frozen flag. |
@@ -409,7 +454,7 @@ defaults 0.05 and 0.5. It is used at every edge update, including the final
 phase. The SPD matrix constraint is part of the joint network prior.
 
 For formulae, assumptions and the error-bound proof, read
-[algorithm-1.0.5.md](inst/algorithm-1.0.5.md). This file is also installed in the
+[algorithm.md](inst/algorithm.md). This file is also installed in the
 package directory. Development repository:
 [taostat1/scNPM_R_package](https://github.com/taostat1/scNPM_R_package).
 License: GPL >= 3.

@@ -11,6 +11,8 @@ make_test_edge_mat <- function(gene_names, p_high = 0.3) {
   # Force some edges above the 0.5 binarization threshold
   high_idx <- which(m > (1 - p_high))
   m[high_idx] <- runif(length(high_idx), 0.6, 1)
+  m[lower.tri(m)] <- t(m)[lower.tri(m)]
+  diag(m) <- 0
   m
 }
 
@@ -36,14 +38,14 @@ test_that("plot_group_network works with synthetic edge matrices", {
   ctrl_edge_mat <- make_test_edge_mat(gene_names)
 
   p_treat <- plot_group_network(
-    edge_mat = treat_edge_mat,
+    edge_mat = treat_edge_mat, selection = "frequency",
     gene_names = gene_names,
     group_type = "treatment"
   )
   expect_true("ggplot" %in% class(p_treat))
 
   p_ctrl <- plot_group_network(
-    edge_mat = ctrl_edge_mat,
+    edge_mat = ctrl_edge_mat, selection = "frequency",
     gene_names = gene_names,
     group_type = "control"
   )
@@ -84,7 +86,7 @@ test_that("plot functions handle empty networks gracefully", {
                       dimnames = list(gene_names, gene_names))
 
   expect_null(suppressWarnings(plot_group_network(
-    edge_mat = empty_mat, gene_names = gene_names, group_type = "treatment"
+    edge_mat = empty_mat, selection = "frequency", gene_names = gene_names, group_type = "treatment"
   )))
   expect_null(suppressWarnings(plot_diff_network(
     diff_mat = empty_mat, gene_names = gene_names, output_mode = "combined"

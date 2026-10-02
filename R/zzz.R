@@ -11,7 +11,8 @@
 #' control reference networks (2 * K features), with pooled predictor scaling.
 #' Default staged inference freezes a stable complete matching, disables
 #' feedback and discards a post-switch burn-in before retaining baseline-model
-#' draws. Directional edge selection controls an estimated posterior expected
+#' draws. Group networks use per-subtype BFDR selection from marginal slab
+#' probabilities. Directional edge selection controls an estimated posterior expected
 #' FDP, with a conservative all-counterparts option; it is not a uniform
 #' frequentist FDR guarantee. Coupled mode retains version 1.0.3 behavior.
 #'

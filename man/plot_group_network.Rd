@@ -2,55 +2,51 @@
 % Please edit documentation in R/plot_all_networks.R
 \name{plot_group_network}
 \alias{plot_group_network}
-\title{Plot Group-Specific Gene Regulatory Network (No File Saving)}
+\title{Plot a Selected Group Network}
 \usage{
 plot_group_network(
   edge_mat,
-  gene_names,
+  gene_names = NULL,
   group_type = c("treatment", "control"),
   edge_color = "#ADD8E6",
-  ...
+  ...,
+  selection = c("bfdr", "frequency"),
+  frequency_threshold = 0.5
 )
 }
 \arguments{
-\item{edge_mat}{2D edge matrix (rows/columns = gene names) extracted from 3D estimate array.}
+\item{edge_mat}{A named network entry such as
+`fit$group_fdr$networks$treatment_1`, or its annotated `probability_matrix`.
+An unannotated frequency matrix is accepted only in frequency mode.}
 
-\item{gene_names}{Vector of gene names (matches row/column names of edge_mat).}
+\item{gene_names}{Gene names in the same order as the matrix. Omit to use
+the row names stored in the BFDR network.}
 
-\item{group_type}{Group type: "treatment" (default) or "control".}
+\item{group_type}{Treatment or control; used for an empty-network message.}
 
-\item{edge_color}{Edge color for network edges (default = "#ADD8E6", the original scNPM light blue; set e.g. "#E74C3C" for treatment-red or "#3498DB" for control-blue).}
+\item{edge_color}{Network edge color.}
 
 \item{...}{Additional parameters passed to plot_network_core().}
+
+\item{selection}{`bfdr` (default) uses the saved decision mask.
+`frequency` explicitly requests the former descriptive display rule.}
+
+\item{frequency_threshold}{Cutoff for frequency mode only, default 0.5
+with the inclusive >= operator. It is not a BFDR rule.}
 }
 \value{
-ggplot object (network plot) or NULL if no edges exist.
+A ggplot object or NULL for an empty selected network.
 }
 \description{
-Plots treatment/control group gene regulatory networks from 3D edge estimate arrays
-(output by run_scNPM) without saving files.
+Uses the saved BFDR mask from [select_group_edges()] or a staged
+[run_scNPM()] fit. No probability rethresholding occurs in BFDR mode.
 }
 \examples{
-# Self-contained example with a small random edge matrix (runs in < 5 sec)
-set.seed(1)
-gn <- paste0("Gene_", 1:10)
-em <- matrix(runif(100), 10, 10, dimnames = list(gn, gn))
-em <- (em + t(em)) / 2
-
-# Treatment group network (default light-blue edges)
-p_treat <- plot_group_network(
-  edge_mat = em,
-  gene_names = gn,
-  group_type = "treatment",
-  label_size = 2.5,
-  size_range = c(1.5, 5),
-  edge_alpha = 0.6,
-  legend_position = "bottom"
-)
-
-# Custom edge color (e.g., treatment-red)
-p_treat_red <- plot_group_network(
-  edge_mat = em, gene_names = gn, group_type = "treatment",
-  edge_color = "#E74C3C"
-)
+# Explicit descriptive display for a matrix of allocation frequencies.
+gn <- paste0("G", 1:3)
+em <- matrix(c(0,.9,.8,.9,0,.1,.8,.1,0), 3, dimnames = list(gn,gn))
+p <- plot_group_network(em, selection = "frequency")
+\dontrun{
+plot_group_network(fit$group_fdr$networks$treatment_1)
+}
 }

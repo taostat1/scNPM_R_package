@@ -36,7 +36,8 @@ run_scNPM(
   fdr_scope = c("frozen", "all_matchings"),
   fdr_min_draws = 200L,
   matching_method = c("lexicographic", "greedy"),
-  fdr_rule = c("delta_threshold", "posterior_error")
+  fdr_rule = c("delta_threshold", "posterior_error"),
+  group_fdr_level = 0.05
 )
 }
 \arguments{
@@ -141,6 +142,9 @@ the previous assignment rule. A frozen map is not reoptimized.}
 contrast cutoffs and retains the largest complete threshold set whose mean
 posterior directional error is at most fdr_level. `posterior_error` retains
 the version 1.0.4 error-sorted prefix rule.}
+
+\item{group_fdr_level}{Group-network BFDR target in (0,1), default 0.05.
+Each condition/subtype is selected separately over its full gene panel.}
 }
 \value{
 A named list containing all key analysis results (can be saved with `save()`):
@@ -180,6 +184,7 @@ A named list containing all key analysis results (can be saved with `save()`):
 \item{stage_history, matching_history}{Per-iteration phase, feedback status and aligned mapping history.}
 \item{criterion_trace}{Recorded augmented likelihood, network prior kernel, SMD loss and J_aug.}
 \item{joint_edge_probabilities}{Final all-pair 00/10/01/11 Rao-Blackwell probabilities, empirical 10/01 frequencies and batch means; slice (k-1)*K+c.}
+\item{group_fdr}{Per-condition/subtype BFDR selection from marginal Rao-Blackwell probabilities; NULL in coupled mode. Contains networks, masks, probabilities, summary and edge tables. Pass a named network to plot_group_network().}
 \item{differential_fdr}{Full directional error table, selected rows, estimated bound, scope and status; NULL for frequency mode.}
 \item{Result}{Retained sampler output, including parameter draws and selected trace summaries}
 

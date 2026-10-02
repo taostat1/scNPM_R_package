@@ -225,7 +225,7 @@ test_that("interleaved conditions initialize missing expression within the right
     }
     expect_equal(result$provenance$package_version,
                  as.character(utils::packageVersion("scNPM")))
-    expect_equal(result$provenance$algorithm, "scNPM-1.0.5-coupled")
+    expect_equal(result$provenance$algorithm, paste0("scNPM-",packageVersion("scNPM"),"-coupled"))
     expect_equal(result$provenance$settings$ds_seed, args$ds_seed)
     expect_equal(result$provenance$settings$num_iter, args$num_iter)
     expect_equal(result$provenance$settings$num_save, args$num_save)

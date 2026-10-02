@@ -5,6 +5,7 @@ export(plot_diff_network)
 export(plot_group_network)
 export(run_scNPM)
 export(select_differential_edges)
+export(select_group_edges)
 importClassesFrom(Matrix,dgTMatrix)
 importFrom(Rcpp,sourceCpp)
 importFrom(ggplot2,

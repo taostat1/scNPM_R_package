@@ -157,75 +157,87 @@ plot_network_core <- function(
   return(p)
 }
 
-#' Plot Group-Specific Gene Regulatory Network (No File Saving)
+#' Plot a Selected Group Network
 #'
-#' Plots treatment/control group gene regulatory networks from 3D edge estimate arrays
-#' (output by run_scNPM) without saving files.
+#' Uses the saved BFDR mask from [select_group_edges()] or a staged
+#' [run_scNPM()] fit. No probability rethresholding occurs in BFDR mode.
 #'
-#' @param edge_mat 2D edge matrix (rows/columns = gene names) extracted from 3D estimate array.
-#' @param gene_names Vector of gene names (matches row/column names of edge_mat).
-#' @param group_type Group type: "treatment" (default) or "control".
-#' @param edge_color Edge color for network edges (default = "#ADD8E6", the original scNPM light blue; set e.g. "#E74C3C" for treatment-red or "#3498DB" for control-blue).
+#' @param edge_mat A named network entry such as
+#'   `fit$group_fdr$networks$treatment_1`, or its annotated `probability_matrix`.
+#'   An unannotated frequency matrix is accepted only in frequency mode.
+#' @param gene_names Gene names in the same order as the matrix. Omit to use
+#'   the row names stored in the BFDR network.
+#' @param group_type Treatment or control; used for an empty-network message.
+#' @param edge_color Network edge color.
+#' @param selection `bfdr` (default) uses the saved decision mask.
+#'   `frequency` explicitly requests the former descriptive display rule.
+#' @param frequency_threshold Cutoff for frequency mode only, default 0.5
+#'   with the inclusive >= operator. It is not a BFDR rule.
 #' @param ... Additional parameters passed to plot_network_core().
-#'
-#' @return ggplot object (network plot) or NULL if no edges exist.
+#' @return A ggplot object or NULL for an empty selected network.
 #' @importFrom igraph graph_from_adjacency_matrix
 #' @export
-#'
 #' @examples
-#' # Self-contained example with a small random edge matrix (runs in < 5 sec)
-#' set.seed(1)
-#' gn <- paste0("Gene_", 1:10)
-#' em <- matrix(runif(100), 10, 10, dimnames = list(gn, gn))
-#' em <- (em + t(em)) / 2
-#'
-#' # Treatment group network (default light-blue edges)
-#' p_treat <- plot_group_network(
-#'   edge_mat = em,
-#'   gene_names = gn,
-#'   group_type = "treatment",
-#'   label_size = 2.5,
-#'   size_range = c(1.5, 5),
-#'   edge_alpha = 0.6,
-#'   legend_position = "bottom"
-#' )
-#'
-#' # Custom edge color (e.g., treatment-red)
-#' p_treat_red <- plot_group_network(
-#'   edge_mat = em, gene_names = gn, group_type = "treatment",
-#'   edge_color = "#E74C3C"
-#' )
+#' # Explicit descriptive display for a matrix of allocation frequencies.
+#' gn <- paste0("G", 1:3)
+#' em <- matrix(c(0,.9,.8,.9,0,.1,.8,.1,0), 3, dimnames = list(gn,gn))
+#' p <- plot_group_network(em, selection = "frequency")
+#' \dontrun{
+#' plot_group_network(fit$group_fdr$networks$treatment_1)
+#' }
 plot_group_network <- function(
     edge_mat,
-    gene_names,
+    gene_names = NULL,
     group_type = c("treatment", "control"),
     edge_color = "#ADD8E6",
-    ...
+    ...,
+    selection = c("bfdr", "frequency"),
+    frequency_threshold = 0.5
 ) {
-  # Validate inputs
   group_type <- match.arg(group_type)
-  rownames(edge_mat) <- gene_names
-  colnames(edge_mat) <- gene_names
-
-  # Binarize edge matrix (core threshold: weight >= 0.5)
-  edge_mat_bin <- edge_mat
-  edge_mat_bin[edge_mat_bin >= 0.5] <- 1
-  edge_mat_bin[edge_mat_bin < 0.5] <- 0
-
-  # Generate core network plot
-  p <- plot_network_core(
-    adj_matrix = edge_mat_bin,
-    edge_color = edge_color,
-    ...
-  )
-
-  # Return early if no valid edges
+  selection <- match.arg(selection)
+  if (is.list(edge_mat) && !is.null(edge_mat$probability_matrix)) {
+    group_type <- match.arg(edge_mat$condition, c("treatment", "control"))
+    edge_mat <- edge_mat$probability_matrix
+  }
+  if (!is.matrix(edge_mat) || !is.numeric(edge_mat) || nrow(edge_mat) != ncol(edge_mat) ||
+      nrow(edge_mat) < 2L || any(!is.finite(edge_mat)) ||
+      any(edge_mat < 0 | edge_mat > 1) || max(abs(edge_mat-t(edge_mat))) > 1e-12)
+    stop("edge_mat must be a finite symmetric probability matrix.")
+  if (is.null(gene_names)) gene_names <- rownames(edge_mat)
+  if (length(gene_names) != nrow(edge_mat) || anyNA(gene_names) ||
+      anyDuplicated(gene_names) || any(!nzchar(gene_names))) stop("Invalid gene_names.")
+  if (selection == "bfdr") {
+    saved <- attr(edge_mat, "scNPM_group_selection")
+    if (is.null(saved)) stop(paste(
+      "BFDR plotting requires a saved group selection. Use",
+      "fit$group_fdr$networks$treatment_1 or select_group_edges(fit).",
+      "For the old descriptive display explicitly set selection = 'frequency'."))
+    mask <- saved$mask
+    if (!identical(saved$method, "bayes_fdr") || !is.matrix(mask) ||
+        !identical(dim(mask), dim(edge_mat)) || anyNA(mask) ||
+        any(!mask %in% c(0,1)) || any(diag(mask) != 0) || any(mask != t(mask)))
+      stop("Invalid saved group BFDR mask.")
+    # A name/order mismatch can relabel biological edges incorrectly.
+    if (!identical(as.character(gene_names), rownames(edge_mat)) ||
+        !identical(rownames(mask), rownames(edge_mat)) ||
+        !identical(colnames(mask), colnames(edge_mat)))
+      stop("Gene order must match the saved BFDR selection.")
+    edge_mat_bin <- 1L * mask
+  } else {
+    if (!is.numeric(frequency_threshold) || length(frequency_threshold) != 1L ||
+        !is.finite(frequency_threshold) || frequency_threshold < 0 || frequency_threshold > 1)
+      stop("frequency_threshold must be between 0 and 1.")
+    edge_mat_bin <- 1L * (edge_mat >= frequency_threshold)
+    diag(edge_mat_bin) <- 0
+  }
+  dimnames(edge_mat_bin) <- list(gene_names, gene_names)
+  p <- plot_network_core(adj_matrix = edge_mat_bin, edge_color = edge_color, ...)
   if (is.null(p)) {
-    warning(paste("No edges found for", group_type, "group - skipping plot"))
+    warning(paste("No selected edges for", group_type, "group - skipping plot"))
     return(NULL)
   }
-
-  return(p)
+  p
 }
 
 #' Plot Differential Gene Regulatory Network (Combined/Separate Mode)

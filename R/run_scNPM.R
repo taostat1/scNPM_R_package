@@ -78,6 +78,8 @@
 #'   descriptive `frequency` selection for coupled fits. Explicit `frequency`
 #'   is available for staged comparisons; `bayes_fdr` requires staged sampling.
 #' @param fdr_level Posterior directional error target in (0,1), default 0.05.
+#' @param group_fdr_level Group-network BFDR target in (0,1), default 0.05.
+#'   Each condition/subtype is selected separately over its full gene panel.
 #' @param fdr_scope `frozen` (default) uses the frozen correspondence.
 #'   `all_matchings` uses a conservative bound over all control counterparts.
 #' @param fdr_min_draws Minimum retained draws for FDR discoveries, at least 20,
@@ -128,6 +130,7 @@
 #' \item{stage_history, matching_history}{Per-iteration phase, feedback status and aligned mapping history.}
 #' \item{criterion_trace}{Recorded augmented likelihood, network prior kernel, SMD loss and J_aug.}
 #' \item{joint_edge_probabilities}{Final all-pair 00/10/01/11 Rao-Blackwell probabilities, empirical 10/01 frequencies and batch means; slice (k-1)*K+c.}
+#' \item{group_fdr}{Per-condition/subtype BFDR selection from marginal Rao-Blackwell probabilities; NULL in coupled mode. Contains networks, masks, probabilities, summary and edge tables. Pass a named network to plot_group_network().}
 #' \item{differential_fdr}{Full directional error table, selected rows, estimated bound, scope and status; NULL for frequency mode.}
 #' \item{Result}{Retained sampler output, including parameter draws and selected trace summaries}
 #'
@@ -179,7 +182,8 @@ run_scNPM <- function(
     fdr_level = 0.05, fdr_scope = c("frozen", "all_matchings"),
     fdr_min_draws = 200L,
     matching_method = c("lexicographic", "greedy"),
-    fdr_rule = c("delta_threshold", "posterior_error")
+    fdr_rule = c("delta_threshold", "posterior_error"),
+    group_fdr_level = 0.05
 ) {
   network_covariates <- match.arg(network_covariates)
   inference_mode <- match.arg(inference_mode)
@@ -242,6 +246,7 @@ run_scNPM <- function(
   check_scalar(num_save, "num_save", 1, num_iter, TRUE)
   check_scalar(diagnostic_every,"diagnostic_every",1,.Machine$integer.max,TRUE)
   check_scalar(fdr_level,"fdr_level",0,1,lower_open=TRUE,upper_open=TRUE)
+  check_scalar(group_fdr_level,"group_fdr_level",0,1,lower_open=TRUE,upper_open=TRUE)
   check_scalar(fdr_min_draws,"fdr_min_draws",20,.Machine$integer.max,TRUE)
   if (inference_mode=="staged") {
     available <- num_iter-num_save
@@ -715,7 +720,7 @@ run_scNPM <- function(
     edge_prior = edge_prior,
     provenance = list(
       package_version = as.character(utils::packageVersion("scNPM")),
-      algorithm = paste0("scNPM-1.0.5-",inference_mode),
+      algorithm = paste0("scNPM-",utils::packageVersion("scNPM"),"-",inference_mode),
       R_version = R.version.string,
       platform = R.version$platform,
       threads = sampler_thread_info(),
@@ -745,12 +750,18 @@ run_scNPM <- function(
         adapt_min=adapt_min,adapt_max=adapt_max,freeze_patience=freeze_patience,
         final_burnin=final_burnin,diagnostic_every=diagnostic_every,
         fdr_level=fdr_level,fdr_scope=fdr_scope,fdr_min_draws=fdr_min_draws,
-        fdr_rule=fdr_rule,matching_method=matching_method,smd_cap=NULL
+        fdr_rule=fdr_rule,group_fdr_level=group_fdr_level,
+        group_selection=if(inference_mode=="staged") "bayes_fdr" else "none",
+        matching_method=matching_method,smd_cap=NULL
       )
     ),
     # Retained sampler output, including selected trace summaries
     Result = Result
   )
+
+  # Selection is post-processing only: it does not change the sampling path.
+  result_list$group_fdr <- if (inference_mode == "staged")
+    select_group_edges(result_list, fdr_level = group_fdr_level, min_draws = fdr_min_draws) else NULL
 
   # Return complete results list
   return(result_list)

@@ -1,3 +1,20 @@
+# scNPM 1.0.6
+
+* Select group networks by BFDR separately for each condition and subtype,
+  using Rao-Blackwell marginal probabilities (p10+p11 or p01+p11). Evaluate
+  complete probability tie blocks and retain the largest set with mean 1-p
+  at most the target (default 0.05); use p >= the smallest selected probability.
+* Add select_group_edges(), automatically return group_fdr in staged fits,
+  and expose summary/edge tables, thresholds, full curves and symmetric masks.
+  Existing staged 1.0.5 fits can be post-processed without new sampling.
+* Group plots now require saved BFDR selections by default. The earlier 0.5
+  display is available only with selection = "frequency". Allocation-frequency
+  arrays retain their original meaning for compatibility.
+* Add the full retinal example, including group and differential exports.
+  Consolidate algorithm documentation into algorithm.md and exclude historical
+  version files and unrelated figure-generation scripts from distribution.
+* Matching, freezing, baseline sampling and differential selection are unchanged.
+
 # scNPM 1.0.5
 
 * Default to complete lexicographic matching: minimize the largest SMD first,

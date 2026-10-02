@@ -1,8 +1,8 @@
 Package: scNPM
 Type: Package
 Title: Single-Cell Network Propensity Matching
-Version: 1.0.5
-Date: 2026-09-26
+Version: 1.0.6
+Date: 2026-10-02
 Authors@R: c(
     person(
       given = "Tao",
@@ -18,8 +18,9 @@ Description: Estimates and compares heterogeneous gene conditional-dependence
     weights, while network propensity matching links cell clusters across
     conditions and guides adaptation. Staged inference freezes stable matching,
     disables feedback, and retains baseline-model samples for posterior
-    directional error selection. Functions assess balance, record criterion
-    diagnostics, and visualize within-condition and differential networks.
+    group and directional differential edge selection. Functions assess balance,
+    record criterion diagnostics, and visualize within-condition and
+    differential networks.
 License: GPL (>= 3)
 Encoding: UTF-8
 LazyData: true

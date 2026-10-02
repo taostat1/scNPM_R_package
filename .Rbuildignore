@@ -1,0 +1,4 @@
+^\.git$
+^\.gitignore$
+^\.Rbuildignore$
+^build_figure.*\.py$
