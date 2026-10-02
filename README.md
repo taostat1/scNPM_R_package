@@ -5,14 +5,240 @@ and compares matched clusters across two conditions.
 
 ## Installation
 
+### Install directly from GitHub
+
 ```r
-install.packages("scNPM_1.0.5.tar.gz", repos = NULL, type = "source")
-# On Windows, install the supplied binary with type = "win.binary".
+if (!requireNamespace("remotes", quietly = TRUE)) {
+  install.packages("remotes")
+}
+remotes::install_github("taostat1/scNPM_R_package", upgrade = "never")
 library(scNPM)
+packageVersion("scNPM")
 ```
 
-Source installation requires a compatible C++17 toolchain. See DESCRIPTION for
-dependencies and NEWS.md for earlier releases.
+This installs the current default branch. To reproduce a particular analysis,
+replace the repository argument with `"taostat1/scNPM_R_package@<commit-sha>"`,
+using the full commit identifier for that analysis.
+
+### Download the source and install locally
+
+Download the [GitHub source ZIP](https://github.com/taostat1/scNPM_R_package/archive/refs/heads/main.zip),
+or use **Code > Download ZIP** on the
+[repository page](https://github.com/taostat1/scNPM_R_package).
+Unzip it, then install the extracted package directory:
+
+```r
+remotes::install_local("path/to/scNPM_R_package-main", upgrade = "never")
+```
+
+The GitHub ZIP contains source code; it is not an R Windows binary package.
+For a separately supplied package archive, use:
+
+```r
+# Built source archive
+install.packages("scNPM_1.0.5.tar.gz", repos = NULL, type = "source")
+
+# Windows binary archive, if supplied for your R version
+# install.packages("scNPM_1.0.5.zip", repos = NULL, type = "win.binary")
+```
+
+Source installation requires R >= 4.0 and a compatible C++17 toolchain;
+on Windows, use the Rtools release matching your R version.
+`remotes` installs missing R dependencies. For local archives installed with
+`repos = NULL`, install their dependencies first (listed in DESCRIPTION).
+Restart R before replacing a loaded installation.
+
+## Example: matched retinal networks
+
+The package includes a demonstration subset of **50 genes and 400 cells**:
+200 peripheral (control) and 200 macular (treatment) retinal cells. This example
+compares retinal regions; the treatment label does not mean that all macular
+cells are diseased. The subset illustrates the workflow and does not reproduce
+the full-data results in the paper.
+
+The complete script is [inst/examples/amd_workflow.R](inst/examples/amd_workflow.R).
+After installation, locate it with:
+
+```r
+system.file("examples", "amd_workflow.R", package = "scNPM")
+```
+
+### 1. Prepare expression, covariates and protein interactions
+
+```r
+library(scNPM)
+data("top50_goal_gene_mt", package = "scNPM")
+expression <- as.matrix(goal_gene_mt)
+stopifnot(identical(as.character(cell$Barcode), colnames(expression)))
+stopifnot(all(cell$PR_or_MR %in% c("No", "Yes")))
+
+qc_names <- c(
+  "scater_qc.all.total_features_by_counts",
+  "scater_qc.all.total_counts",
+  "scater_qc.endogenous.pct_counts",
+  "scater_qc.feature_control_MT.pct_counts",
+  "scater_qc.all.pct_counts_in_top_50_features"
+)
+cell_t <- cbind(
+  treatment = as.integer(cell$PR_or_MR == "Yes"),
+  as.matrix(cell[, qc_names, drop = FALSE])
+)
+colnames(cell_t) <- c("treatment", "detected_genes", "total_counts",
+                      "endogenous_pct", "mitochondrial_pct", "top50_pct")
+stopifnot(nrow(cell_t) == ncol(expression), all(is.finite(cell_t)))
+ppi <- system.file("extdata", "top50_string_interactions_short.tsv",
+                   package = "scNPM")
+stopifnot(nzchar(ppi))
+```
+
+`cell_t` has one row per cell, in exactly the expression-column order. Its first
+column is the 0/1 group indicator; the other five columns are measured QC
+covariates. Supply these columns on their original scale: the propensity step
+standardizes them across the pooled treatment and control cells. The eight
+network-reference covariates for K = 4 are computed internally.
+
+The PPI file supplies gene pairs and `combined_score`. In this implementation,
+a positive score marks a supplied interaction; score magnitudes are not used
+as continuous prior weights. Gene names must match the expression row names.
+Use `protein_input = NULL` to use the common low baseline prior for all pairs.
+
+### 2. Fit four clusters per condition
+
+```r
+fit <- run_scNPM(
+  goal_gene_mt = expression, cell_t = cell_t, protein_input = ppi, K = 4,
+  num_iter = 5000, num_save = 2000,
+  inference_mode = "staged", adapt_min = 500, adapt_max = 2000,
+  freeze_patience = 20, final_burnin = 1000,
+  network_covariates = "all_reference", matching_method = "lexicographic",
+  differential_method = "bayes_fdr", fdr_level = 0.05,
+  fdr_scope = "frozen", fdr_rule = "delta_threshold",
+  diagnostic_every = 10, ds_seed = 123
+)
+```
+
+The example retains iterations 3001--5000. Matching must freeze by iteration
+2000, leaving at least 1000 baseline iterations before retention. If the
+matching does not stabilize, the function reports an error; increase the
+adaptation and total iteration budgets together rather than disabling the
+stability check. Runtime depends on the data, iteration count and hardware.
+
+### 3. Inspect matching and differential selection
+
+```r
+fit$matching_result_df                 # Reported pairs and final-state SMDs
+fit$matching_objective                 # Maximum and total SMD for that map
+fit$sampling_schedule                 # Freeze and retained-sample schedule
+fit$differential_fdr$status
+fit$differential_fdr$threshold         # Strict |delta_p| > threshold
+fit$differential_fdr$estimated_error_bound
+head(fit$differential_fdr$selected)
+compute_qf_smd(fit)                    # Each network feature, by matched pair
+fit$smd_covariate_results              # Measured QC covariate balance
+```
+
+A row of `differential_fdr$selected` is one unordered gene pair in one matched
+cluster comparison. `direction = "treatment"` or `"control"` names the enriched
+condition, not a causal direction between the genes. `delta_p` is
+`p_treatment_only - p_control_only`; `error_bound` is the estimated error used
+in selection. The selected-set mean, rather than every individual row, is
+required to be at most 0.05. An empty selection is a valid outcome; the returned
+mean of zero for an empty set does not indicate evidence for differential edges.
+
+### 4. Export tables, diagnostics and network plots
+
+```r
+out_dir <- "scNPM_example_output"
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+write_csv <- function(x, name, row_names = FALSE) {
+  write.csv(x, file.path(out_dir, name), row.names = row_names)
+}
+saveRDS(fit, file.path(out_dir, "fit.rds"))
+write_csv(fit$matching_result_df, "matching.csv")
+write_csv(compute_qf_smd(fit), "network_feature_smd.csv")
+write_csv(fit$smd_covariate_results, "qc_covariate_smd.csv", row_names = TRUE)
+write_csv(fit$differential_fdr$table, "differential_all.csv")
+write_csv(fit$differential_fdr$selected, "differential_selected.csv")
+write_csv(fit$differential_fdr$threshold_curve, "bfdr_threshold_curve.csv")
+write_csv(fit$stage_history, "stage_history.csv")
+write_csv(data.frame(iteration = seq_len(nrow(fit$matching_history)),
+                     fit$matching_history), "matching_history.csv")
+write_csv(fit$criterion_trace, "criterion_trace.csv")
+
+maps <- fit$matching_history
+mapping_changes <- if (nrow(maps) < 2L) 0L else
+  sum(rowSums(maps[-1, , drop = FALSE] !=
+                maps[-nrow(maps), , drop = FALSE]) > 0)
+write_csv(data.frame(
+  runtime_minutes = as.numeric(fit$runtime, units = "mins"),
+  frozen_at = fit$sampling_schedule$frozen_at,
+  adaptation_iterations = sum(fit$stage_history$stage == "adaptation"),
+  mapping_changes = mapping_changes,
+  retained_draws = fit$sampling_schedule$retained_draws,
+  cutoff = fit$differential_fdr$threshold,
+  selected_edges = nrow(fit$differential_fdr$selected),
+  estimated_BFDR = fit$differential_fdr$estimated_error_bound,
+  selection_status = fit$differential_fdr$status
+), "run_summary.csv")
+
+trace <- fit$criterion_trace
+if (sum(is.finite(trace$J_aug)) >= 2L) {
+  pdf(file.path(out_dir, "criterion_trace.pdf"), width = 7, height = 4)
+  plot(trace$iteration, trace$J_aug, type = "l",
+       xlab = "Iteration", ylab = "Diagnostic criterion")
+  abline(v = fit$sampling_schedule$frozen_at, lty = 2, col = "grey50")
+  dev.off()
+}
+set.seed(123)  # Reproducible plotting layouts
+for (pair_name in names(fit$edge_diff_networks)) {
+  net <- fit$edge_diff_networks[[pair_name]]
+  if (net$solid_network$count + net$dashed_network$count == 0L) next
+  p <- plot_diff_network(net$diff_matrix, fit$gene_names,
+                         output_mode = "combined")
+  if (!is.null(p)) ggplot2::ggsave(
+    file.path(out_dir, paste0("differential_", pair_name, ".pdf")),
+    plot = p, width = 7, height = 5
+  )
+}
+writeLines(capture.output(sessionInfo()), file.path(out_dir, "sessionInfo.txt"))
+```
+
+For each matched pair, the script saves a combined differential network PDF
+when selected edges exist. Solid edges denote treatment enrichment and dashed
+edges denote control enrichment. The original `diff_matrix` carries the BFDR
+selection masks; passing it directly preserves the selected set.
+
+To plot an individual group network using the package's descriptive display
+threshold of posterior allocation frequency >= 0.5:
+
+```r
+p <- plot_group_network(fit$edge_treat_est[, , 1], fit$gene_names,
+                        group_type = "treatment")
+if (!is.null(p)) print(p)
+```
+
+This group-network plotting threshold is separate from the differential BFDR
+selection above. `plot_group_network()` does not itself perform group-network
+BFDR selection.
+
+### Files written by the example
+
+| File in `scNPM_example_output/` | Contents |
+| --- | --- |
+| `fit.rds` | Complete result, including selection attributes and provenance; reload with `readRDS()`. |
+| `matching.csv` | One-to-one cluster correspondence and final-state SMD. |
+| `network_feature_smd.csv`, `qc_covariate_smd.csv` | Balance for the network-reference features and measured covariates. |
+| `differential_all.csv` | All tested gene-pair/cluster items, their probabilities, contrasts, errors and selection flags. |
+| `differential_selected.csv` | Only selected differential associations. |
+| `bfdr_threshold_curve.csv` | Candidate cutoffs, edge counts, mean errors and the chosen cutoff. |
+| `run_summary.csv` | Runtime, freeze iteration, adaptation count, mapping changes, selected cutoff and estimated BFDR. |
+| `stage_history.csv`, `matching_history.csv`, `criterion_trace.csv` | Iteration-level stages and matching, plus recorded criterion components. |
+| `criterion_trace.pdf` | Diagnostic criterion against iteration. |
+| `differential_treat_*_ctrl_*.pdf` | Selected differential network for each nonempty matched comparison. |
+| `sessionInfo.txt` | R session and dependency versions. |
+
+The function returns a list in memory; these files are written by the example
+script. See the field reference below for parameter and network summaries.
 
 ## The default staged algorithm
 
@@ -60,25 +286,8 @@ columns: its first column codes control 0 and treatment 1; remaining numeric
 columns are covariates. `protein_input` accepts a data frame, TSV text or a
 local TSV file with node1, node2 and combined_score, or NULL.
 
-```r
-# Supply expression, cell_t and optional ppi for your data.
-fit <- run_scNPM(
-  goal_gene_mt = expression, cell_t = cell_t, protein_input = ppi, K = 4,
-  num_iter = 5000, num_save = 2000,
-  inference_mode = "staged", adapt_min = 500, adapt_max = 2000,
-  freeze_patience = 20, final_burnin = 1000,
-  differential_method = "bayes_fdr", fdr_level = 0.05,
-  fdr_scope = "frozen", fdr_rule = "delta_threshold",
-  matching_method = "lexicographic", diagnostic_every = 10, ds_seed = 123
-)
-fit$sampling_schedule
-fit$matching_result_df
-fit$differential_fdr$selected
-fit$differential_fdr$estimated_error_bound
-compute_qf_smd(fit)
-plot(fit$criterion_trace$iteration, fit$criterion_trace$J_aug, type = "l")
-saveRDS(fit, "scNPM_1.0.5_fit.rds")
-```
+The complete retinal example above constructs these inputs and runs the staged analysis.
+
 
 Budgets satisfy `adapt_min <= adapt_max` and
 `adapt_max + final_burnin <= num_iter - num_save`. Earlier freezing gives a
@@ -155,7 +364,24 @@ matching_method = "greedy"` for the
 Posterior error selection rejects coupled-mode results. Old and new draws
 must not be pooled. K=4 still has four clusters per condition, not eight.
 
-Existing network, plotting, SMD and provenance outputs are retained. New fields:
+The returned list contains the following commonly used results:
+
+| Field | Contents |
+| --- | --- |
+| `K`, `G`, `N`, `gene_names` | Clusters per condition, gene count, cell count and gene order. |
+| `runtime` | Sampler runtime as a `difftime` value in minutes; excludes later export and plotting. |
+| `edge_treat_est`, `edge_ctrl_est` | G x G x K retained slab-allocation frequency arrays. |
+| `mu_treat_est`, `mu_ctrl_est` | Retained component-mean summaries. |
+| `invcov_treat_est`, `invcov_ctrl_est` | Retained precision-matrix summaries. |
+| `theta_treat_est`, `theta_ctrl_est`, `theta_est` | Retained latent-expression summaries for cells. |
+| `group_treat_est`, `group_ctrl_est`, `group_est` | Cell cluster assignments. |
+| `matching_result_df`, `match_map`, `smd_results` | Reported correspondence and final-state propensity-score balance. |
+| `smd_covariate_results`, `network_covariates` | QC balance and the network-reference features used in matching. |
+| `edge_diff_networks` | One entry per matched pair, containing the contrast matrix, treatment/control edge lists and counts. |
+| `provenance` | Version, seed, settings, timestamps, thread information and input fingerprints. |
+| `Result` | Retained sampler output and trace summaries; not a copy of every state from every iteration. |
+
+Staged inference and selection also return:
 
 | Field | Contents |
 | --- | --- |
