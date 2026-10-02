@@ -283,6 +283,14 @@ not substitute empirical allocation frequencies for those probabilities.
 The function returns a list in memory; these files are written by the example
 script. See the field reference below for parameter and network summaries.
 
+## Informational output
+
+`run_scNPM()` is quiet by default (`verbose = FALSE`). Use `verbose = TRUE`
+for initialization, sampler progress and elapsed-time messages. All of these,
+including C++ progress, use R message conditions and can also be suppressed
+with `suppressMessages()`. Warnings and errors retain their normal behavior.
+Runtime, dimensions, stages and diagnostic values are returned in the result.
+
 ## The default staged algorithm
 
 1. Update the latent expression, mixture and network states with matching feedback.

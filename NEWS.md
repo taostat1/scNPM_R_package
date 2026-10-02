@@ -1,5 +1,9 @@
 # scNPM 1.0.6
 
+* Address CRAN review: keep the 39-character title, make all help examples
+  self-contained and unwrapped, and add quiet-by-default verbosity across R
+  and C++ with optional progress emitted as suppressible message conditions.
+
 * Select group networks by BFDR separately for each condition and subtype,
   using Rao-Blackwell marginal probabilities (p10+p11 or p01+p11). Evaluate
   complete probability tie blocks and retain the largest set with mean 1-p

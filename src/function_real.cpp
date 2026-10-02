@@ -1023,7 +1023,7 @@ Rcpp::List MCMC_with_difficulty_based_matching(
   std::string network_covariates = "all_reference", double propensity_ridge = 1e-6,
   std::string inference_mode = "coupled", int adapt_min = 1, int adapt_max = 1,
   int freeze_patience = 2, int final_burnin = 1, int diagnostic_every = 10,
-  std::string matching_method = "greedy") {
+  std::string matching_method = "greedy", bool verbose = false) {
 
   if(matching_method!="lexicographic" && matching_method!="greedy")
     Rcpp::stop("matching_method must be lexicographic or greedy.");
@@ -1169,15 +1169,10 @@ Rcpp::List MCMC_with_difficulty_based_matching(
   mat ind_zero_treat = ind_zero.rows(treat_idx);
   mat ind_zero_ctrl  = ind_zero.rows(ctrl_idx);
 
-  Rcpp::Rcout << "=== MCMC Parameter Debug ===\n";
-  Rcpp::Rcout << "G: " << G << ", N: " << N << ", K: " << K << "\n";
-  Rcpp::Rcout << "treat_idx length: " << treat_idx.n_elem << ", ctrl_idx length: " << ctrl_idx.n_elem << "\n";
-  Rcpp::Rcout << "group_treat range: " << min(group_treat) << " ~ " << max(group_treat) << "\n";
-  Rcpp::Rcout << "group_ctrl range: " << min(group_ctrl) << " ~ " << max(group_ctrl) << "\n";
-  Rcpp::Rcout << "Total iterations: " << num_iter << ", Save iterations: " << num_save << "\n";
-  Rcpp::Rcout << "============================\n";
-  Rcpp::Rcout << "MCMC started...\n";
-  
+  // All R callbacks occur on the main thread, outside OpenMP regions.
+  Rcpp::Function progress_message = Rcpp::Environment::base_env()["message"];
+  if (verbose) progress_message("MCMC started...");
+
   cube invcov_treat_save(G_u, G_u, K_u, fill::zeros);
   cube invcov_ctrl_save(G_u, G_u, K_u, fill::zeros);
   cube edge_treat_save(G_u, G_u, K_u, fill::zeros);
@@ -1222,10 +1217,10 @@ Rcpp::List MCMC_with_difficulty_based_matching(
     Rcpp::checkUserInterrupt();
     const bool feedback_this_iter = !staged || !frozen;
     const int stage_code = !staged ? 0 : (!frozen ? 1 : (t_iter < save_start ? 2 : 3));
-    double progress = (t_iter + 1.0) / num_iter * 100.0;
-    Rcpp::Rcout << "\rMCMC Progress: [" << t_iter + 1 << "/" << num_iter << "] " << std::fixed << std::setprecision(1) << progress << "%";
-    Rcpp::Rcout.flush();
-    
+    if (verbose && ((t_iter + 1) % std::max(1, num_iter / 100) == 0 || t_iter + 1 == num_iter)) {
+      progress_message("MCMC iteration " + std::to_string(t_iter + 1) + "/" + std::to_string(num_iter));
+    }
+
     iter_seed = static_cast<unsigned long>(randi(distr_param(1, 1000000)));
     update_theta(theta_treat_t, ind_zero_treat, mu_treat, invcov_treat_owned, cov_treat_owned, 
                  lambda0_t, lambda1_t, group_treat, n_treat, iter_seed, epsilon_theta, num_step_theta);
@@ -1376,7 +1371,7 @@ Rcpp::List MCMC_with_difficulty_based_matching(
     }
   }
   
-  Rcpp::Rcout << "\nMCMC completed!\n";
+  if (verbose) progress_message("MCMC completed!");
   
   mu_treat_save   /= num_save;
   mu_ctrl_save    /= num_save;

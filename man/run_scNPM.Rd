@@ -37,7 +37,8 @@ run_scNPM(
   fdr_min_draws = 200L,
   matching_method = c("lexicographic", "greedy"),
   fdr_rule = c("delta_threshold", "posterior_error"),
-  group_fdr_level = 0.05
+  group_fdr_level = 0.05,
+  verbose = FALSE
 )
 }
 \arguments{
@@ -145,6 +146,11 @@ the version 1.0.4 error-sorted prefix rule.}
 
 \item{group_fdr_level}{Group-network BFDR target in (0,1), default 0.05.
 Each condition/subtype is selected separately over its full gene panel.}
+
+\item{verbose}{Logical; FALSE (default) suppresses informational output.
+TRUE emits initialization, progress and timing through message conditions,
+including native sampler progress; suppressMessages() can suppress these.
+Warnings and errors are unaffected.}
 }
 \value{
 A named list containing all key analysis results (can be saved with `save()`):
@@ -212,17 +218,19 @@ prior kernel and total SMD. It is a diagnostic, not an optimized objective
 or the observed-data marginal likelihood; stochastic decreases are allowed.
 }
 \examples{
-\donttest{
+# Small demonstration of staged inference; use longer runs for an analysis.
 set.seed(7)
 x <- matrix(rpois(6 * 40, lambda = 4), nrow = 6,
             dimnames = list(paste0("G", 1:6), NULL))
 cells <- cbind(condition = rep(0:1, each = 20))
 ppi <- data.frame(node1 = "G1", node2 = "G2", combined_score = 0.9)
-# Short demonstration; increase the run length for an analysis.
-fit <- run_scNPM(x, cells, K = 2, num_iter = 20, num_save = 10,
-                 inference_mode = "coupled",
+fit <- run_scNPM(x, cells, K = 1, num_iter = 60, num_save = 20,
+                 adapt_min = 5, adapt_max = 15, freeze_patience = 3,
+                 final_burnin = 20, fdr_min_draws = 20,
+                 num_step_theta = 2, num_step_lam = 2,
+                 epsilon_theta = 0.01, epsilon_lam = 0.01,
                  protein_input = ppi)
 fit$matching_result_df
+fit$group_fdr$summary
 compute_qf_smd(fit)
-}
 }

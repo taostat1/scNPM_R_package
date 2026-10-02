@@ -40,9 +40,20 @@ a uniform frequentist FDR guarantee. Existing staged 1.0.5 fits with saved
 joint probabilities can be processed without rerunning the sampler.
 }
 \examples{
-\dontrun{
-group <- select_group_edges(fit, fdr_level = 0.05)
+# Synthetic retained posterior summaries for one matched pair.
+# These values illustrate selection; no MCMC is run in this example.
+gn <- paste0("G", 1:3)
+p <- matrix(c(0,.99,.97,.99,0,.60,.97,.60,0), 3,
+            dimnames = list(gn, gn))
+z <- array(0, c(3,3,1))
+p10 <- array(p, c(3,3,1)); p00 <- array(1-p, c(3,3,1))
+diag(p00[, , 1]) <- 0
+example_fit <- list(
+  K = 1L, G = 3L, gene_names = gn, inference_mode = "staged",
+  matching_result_df = data.frame(treatment_cluster=1L, matched_control_cluster=1L),
+  sampling_schedule = list(feedback_disabled_for_retained=TRUE, retained_draws=500L),
+  joint_edge_probabilities = list(p00=p00, p10=p10, p01=z, p11=z)
+)
+group <- select_group_edges(example_fit)
 group$summary
-plot_group_network(group$networks$treatment_1, fit$gene_names)
-}
 }

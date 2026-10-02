@@ -2,3 +2,4 @@
 ^\.gitignore$
 ^\.Rbuildignore$
 ^build_figure.*\.py$
+^cran-comments\.md$

@@ -78,6 +78,10 @@
 #'   descriptive `frequency` selection for coupled fits. Explicit `frequency`
 #'   is available for staged comparisons; `bayes_fdr` requires staged sampling.
 #' @param fdr_level Posterior directional error target in (0,1), default 0.05.
+#' @param verbose Logical; FALSE (default) suppresses informational output.
+#'   TRUE emits initialization, progress and timing through message conditions,
+#'   including native sampler progress; suppressMessages() can suppress these.
+#'   Warnings and errors are unaffected.
 #' @param group_fdr_level Group-network BFDR target in (0,1), default 0.05.
 #'   Each condition/subtype is selected separately over its full gene panel.
 #' @param fdr_scope `frozen` (default) uses the frozen correspondence.
@@ -139,19 +143,21 @@
 #' \item{provenance}{Package version, input fingerprint, native-library fingerprint, execution environment, times and analysis settings.}
 #'
 #' @examples
-#' \donttest{
+#' # Small demonstration of staged inference; use longer runs for an analysis.
 #' set.seed(7)
 #' x <- matrix(rpois(6 * 40, lambda = 4), nrow = 6,
 #'             dimnames = list(paste0("G", 1:6), NULL))
 #' cells <- cbind(condition = rep(0:1, each = 20))
 #' ppi <- data.frame(node1 = "G1", node2 = "G2", combined_score = 0.9)
-#' # Short demonstration; increase the run length for an analysis.
-#' fit <- run_scNPM(x, cells, K = 2, num_iter = 20, num_save = 10,
-#'                  inference_mode = "coupled",
+#' fit <- run_scNPM(x, cells, K = 1, num_iter = 60, num_save = 20,
+#'                  adapt_min = 5, adapt_max = 15, freeze_patience = 3,
+#'                  final_burnin = 20, fdr_min_draws = 20,
+#'                  num_step_theta = 2, num_step_lam = 2,
+#'                  epsilon_theta = 0.01, epsilon_lam = 0.01,
 #'                  protein_input = ppi)
 #' fit$matching_result_df
+#' fit$group_fdr$summary
 #' compute_qf_smd(fit)
-#' }
 #' @export
 #' @importFrom stats kmeans quantile rnorm setNames
 run_scNPM <- function(
@@ -183,8 +189,11 @@ run_scNPM <- function(
     fdr_min_draws = 200L,
     matching_method = c("lexicographic", "greedy"),
     fdr_rule = c("delta_threshold", "posterior_error"),
-    group_fdr_level = 0.05
+    group_fdr_level = 0.05,
+    verbose = FALSE
 ) {
+  if (!is.logical(verbose) || length(verbose) != 1L || is.na(verbose))
+    stop("verbose must be TRUE or FALSE.")
   network_covariates <- match.arg(network_covariates)
   inference_mode <- match.arg(inference_mode)
   differential_method <- match.arg(differential_method)
@@ -355,7 +364,7 @@ run_scNPM <- function(
   # Log transformation and NA/Inf handling
   theta_t <- log(theta_t)
   theta_t[is.na(theta_t) | theta_t == -Inf] <- 0  # Replace NA/-Inf with 0
-  message("Theta_t initialization completed (stratified zero imputation)")
+  if (verbose) message("Theta_t initialization completed (stratified zero imputation)")
 
   # --------------------------
   # 6. Initialize mean/covariance/precision matrices
@@ -413,7 +422,7 @@ run_scNPM <- function(
     edge_treat[, , k] <- protein_mat
     edge_ctrl[, , k] <- protein_mat
   }
-  message("Edge matrices initialized (based on protein interaction matrix)")
+  if (verbose) message("Edge matrices initialized (based on protein interaction matrix)")
 
   # --------------------------
   # 8. Final parameter preparation
@@ -484,13 +493,14 @@ run_scNPM <- function(
     propensity_ridge = propensity_ridge,
     inference_mode = inference_mode, adapt_min = adapt_min, adapt_max = adapt_max,
     freeze_patience = freeze_patience, final_burnin = final_burnin,
-    diagnostic_every = diagnostic_every, matching_method = matching_method
+    diagnostic_every = diagnostic_every, matching_method = matching_method,
+    verbose = verbose
   )
 
   # Calculate MCMC runtime
   end_time <- Sys.time()
   runtime <- difftime(end_time, start_time, units = "mins")
-  message(paste0("MCMC Runtime: ", round(runtime, 2), " minutes"))
+  if (verbose) message(paste0("MCMC Runtime: ", round(runtime, 2), " minutes"))
 
   # --------------------------
   # 10. Extract retained-draw summaries
@@ -750,7 +760,7 @@ run_scNPM <- function(
         adapt_min=adapt_min,adapt_max=adapt_max,freeze_patience=freeze_patience,
         final_burnin=final_burnin,diagnostic_every=diagnostic_every,
         fdr_level=fdr_level,fdr_scope=fdr_scope,fdr_min_draws=fdr_min_draws,
-        fdr_rule=fdr_rule,group_fdr_level=group_fdr_level,
+        fdr_rule=fdr_rule,group_fdr_level=group_fdr_level,verbose=verbose,
         group_selection=if(inference_mode=="staged") "bayes_fdr" else "none",
         matching_method=matching_method,smd_cap=NULL
       )
