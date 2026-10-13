@@ -4,15 +4,16 @@
 #' The default first adapts networks and matching, aligns component labels to
 #' fixed initial mean anchors, and freezes a complete mapping after sustained
 #' stability. It then disables counterpart feedback, completes post-switch
-#' burn-in and retains final baseline-model samples. Failure to stabilize by
-#' the adaptation limit stops the run without producing final discoveries.
+#' burn-in and retains final baseline-model samples. At the adaptation limit,
+#' the default freezes a recent consensus map and records that stability was not established.
 #'
-#' Network features are centered distances to all 2*K current references,
-#' with pooled scaling; the legacy uncentered feature remains available.
-#' Default differential selection bounds the estimated posterior directional
-#' error over every possible control counterpart. This is model-based Bayesian
+#' Network features are centered distances to all 2*K current references.
+#' Pairwise matching standardizes predictors within each training fold;
+#' global matching uses pooled scaling. Default differential selection bounds
+#' the estimated posterior directional error for the frozen counterpart. This is model-based Bayesian
 #' error selection, not a finite-sample frequentist FDR guarantee. The coupled
-#' mode reproduces version 1.0.3 and uses descriptive frequency contrasts.
+#' mode uses descriptive frequency contrasts; combine global scores and greedy
+#' assignment for the earlier matching behavior.
 #' The J_aug trace uses an augmented-data likelihood, a state-wise network
 #' prior kernel and total SMD. It is a diagnostic, not an optimized objective
 #' or the observed-data marginal likelihood; stochastic decreases are allowed.
@@ -23,7 +24,8 @@
 #' @param cell_t Finite numeric matrix or data frame, with cells in the same
 #'   order as columns of `goal_gene_mt`. The first column is 0 (control) or
 #'   1 (treatment); both groups must be present. Remaining columns are numeric
-#'   covariates, standardized across both groups. Encode categorical covariates
+#'   covariates, standardized within each pair's training fold (pooled over both
+#'   groups in global mode). Encode categorical covariates
 #'   numerically before calling this function.
 #' @param K Positive integer number of clusters in each condition, no larger
 #'   than the number of distinct expression profiles in either condition.
@@ -63,15 +65,16 @@
 #'   Other cell covariates are retained; matching_method selects the assignment rule.
 #' @param propensity_ridge Positive diagonal ridge stabilization for the
 #'   pooled logistic IRLS fit (default 1e-6, also applied to the intercept).
-#'   This is a numerical setting, not an empirically tuned penalty.
+#'   Used only with matching_score = "global". Pairwise regression uses
+#'   a fixed slope penalty of 0.001 times the total observation weight.
 #'
-#' @param inference_mode `staged` (default) or `coupled` (continuous feedback; use greedy matching for version 1.0.3 behavior).
+#' @param inference_mode `staged` (default) or `coupled` (continuous feedback; use global scores and greedy matching for the earlier workflow).
 #' @param adapt_min Earliest freezing iteration. NULL uses min(100, floor(adapt_max/2)), at least 2.
-#' @param adapt_max Latest adaptation iteration. NULL uses num_iter-num_save-final_burnin.
+#' @param adapt_max Latest adaptation iteration. NULL uses min(3000, num_iter-num_save-final_burnin).
 #' @param freeze_patience Consecutive identical complete maps needed to freeze,
-#'   at least 2. NULL uses min(20, floor(adapt_max/2)), at least 2.
+#'   at least 2. NULL uses min(5, floor(adapt_max/2)), at least 2.
 #' @param final_burnin Minimum iterations after disabling feedback and before
-#'   retention. NULL uses floor((num_iter-num_save)/3), at least 1.
+#'   retention. NULL uses min(1000, floor((num_iter-num_save)/3)), at least 1.
 #' @param diagnostic_every Positive interval for final-stage J_aug diagnostics;
 #'   adaptation diagnostics and matching histories are recorded every iteration.
 #' @param differential_method `auto` chooses `bayes_fdr` for staged fits and
@@ -89,6 +92,16 @@
 #' @param fdr_min_draws Minimum retained draws for FDR discoveries, at least 20,
 #'   default 200. Fewer draws return probabilities and no selected discoveries.
 #'
+#' @param matching_score Pairwise cross-fitted propensity scores (default), or original global scores.
+#' @param freeze_policy At the adaptation limit use a consensus map (default), or stop with error.
+#' @param freeze_window Number of most recent valid maps used for consensus, default 100.
+#' @param progress_every Positive elapsed-time interval in seconds for progress
+#'   reports (default 60). Reports occur at completed iterations and also at
+#'   start, freezing, first retained draw and completion. A single long sweep
+#'   can delay a report. ETA is an approximate extrapolation of elapsed sampling time.
+#' @param progress_file Optional CSV path. Append timestamped progress records
+#'   even when verbose is FALSE; parent directory must exist. Use a separate
+#'   file for each concurrent fit. NULL (default) writes no progress file.
 #' @param matching_method `lexicographic` (default) minimizes maximum pair SMD,
 #'   then total SMD, with deterministic ties and no SMD cap. `greedy` reproduces
 #'   the previous assignment rule. A frozen map is not reoptimized.
@@ -125,8 +138,9 @@
 #' \item{qf_global}{Legacy uncentered per-cell quadratic form retained for compatibility. It enters the propensity model only in legacy mode.}
 #' \item{network_covariates}{Raw network-feature matrix from the final matching call. Columns are qf_ref_T1 through qf_ref_TK then qf_ref_C1 through qf_ref_CK in all-reference mode, or qf_network in legacy mode.}
 #' \item{network_covariate_mode}{Selected network feature mode.}
-#' \item{propensity_scaling}{Pooled centers and scales for the full predictor matrix, with other cell covariates before network features.}
-#' \item{propensity_scores}{Per-cell propensity scores from the final matching call}
+#' \item{propensity_scaling}{Pooled centers and scales for global matching; NULL for pairwise matching, which scales each training fold separately.}
+#' \item{global_reference_scaling}{Pooled feature scaling retained as a diagnostic in both modes.}
+#' \item{propensity_scores}{Per-cell scores for the selected pair in pairwise mode; pooled scores in global mode. Pairwise scores from different pairs are not a single global propensity score.}
 #' \item{final_group_label}{Final MCMC cluster label per cell (0-based: treatment cells 0..K-1, control cells K..2K-1; used by compute_qf_smd())}
 #' \item{edge_diff_networks}{Per-cluster networks selected by differential_method; solid/dashed indicates treatment/control enrichment. The matrix uses Rao-Blackwell contrasts for bayes_fdr and empirical frequency contrasts for frequency.}
 #' \item{inference_mode, differential_method}{Resolved inference and selection modes.}
@@ -165,8 +179,8 @@ run_scNPM <- function(
     cell_t,
     K,
     ds_seed = 20250102,
-    num_iter = 1000,
-    num_save = 500,
+    num_iter = 5000,
+    num_save = 1000,
     protein_input = NULL,
     ssp_v0 = 0.02,
     ssp_v1 = 1,
@@ -190,15 +204,30 @@ run_scNPM <- function(
     matching_method = c("lexicographic", "greedy"),
     fdr_rule = c("delta_threshold", "posterior_error"),
     group_fdr_level = 0.05,
-    verbose = FALSE
+    verbose = FALSE,
+    matching_score = c("pairwise", "global"),
+    freeze_policy = c("consensus", "error"), freeze_window = 100L,
+    progress_every = 60, progress_file = NULL
 ) {
   if (!is.logical(verbose) || length(verbose) != 1L || is.na(verbose))
     stop("verbose must be TRUE or FALSE.")
+  if (!is.numeric(progress_every) || length(progress_every)!=1L ||
+      !is.finite(progress_every) || progress_every<=0) stop("progress_every must be positive seconds.")
+  if (!is.null(progress_file)) {
+    if (!is.character(progress_file) || length(progress_file)!=1L ||
+        is.na(progress_file) || !nzchar(progress_file) || dir.exists(progress_file) ||
+        !dir.exists(dirname(progress_file))) stop("progress_file must be a file path in an existing directory.")
+  }
+  progress_callback <- .make_sampler_progress(verbose,progress_file)
+  matching_score <- match.arg(matching_score)
+  freeze_policy <- match.arg(freeze_policy)
+  if(length(freeze_window)!=1L || !is.finite(freeze_window) || freeze_window<1 || freeze_window!=as.integer(freeze_window))stop("freeze_window must be a positive integer")
   network_covariates <- match.arg(network_covariates)
   inference_mode <- match.arg(inference_mode)
   differential_method <- match.arg(differential_method)
   fdr_scope <- match.arg(fdr_scope)
   matching_method <- match.arg(matching_method)
+  if(matching_score=="pairwise" && (network_covariates!="all_reference" || matching_method!="lexicographic"))stop("Pairwise scores require all_reference features and lexicographic assignment")
   fdr_rule <- match.arg(fdr_rule)
   if (differential_method=="auto") differential_method <- if(inference_mode=="staged") "bayes_fdr" else "frequency"
   if (inference_mode=="coupled" && differential_method=="bayes_fdr")
@@ -260,14 +289,14 @@ run_scNPM <- function(
   if (inference_mode=="staged") {
     available <- num_iter-num_save
     if (available<3) stop("Staged inference requires at least three pre-retention iterations; increase num_iter or use inference_mode='coupled'.")
-    if (is.null(final_burnin)) final_burnin <- max(1L,floor(available/3))
+    if (is.null(final_burnin)) final_burnin <- max(1L,min(1000L,floor(available/3)))
     check_scalar(final_burnin,"final_burnin",1,available-2L,TRUE)
-    if (is.null(adapt_max)) adapt_max <- available-final_burnin
+    if (is.null(adapt_max)) adapt_max <- min(3000L,available-final_burnin)
     check_scalar(adapt_max,"adapt_max",2,available-final_burnin,TRUE)
     if (is.null(adapt_min)) adapt_min <- max(2L,min(100L,floor(adapt_max/2)))
-    if (is.null(freeze_patience)) freeze_patience <- max(2L,min(20L,floor(adapt_max/2)))
+    if (is.null(freeze_patience)) freeze_patience <- max(2L,min(5L,floor(adapt_max/2)))
     check_scalar(adapt_min,"adapt_min",1,adapt_max,TRUE)
-    check_scalar(freeze_patience,"freeze_patience",2,adapt_max,TRUE)
+    check_scalar(freeze_patience,"freeze_patience",2,Inf,TRUE)
   } else {
     adapt_min <- adapt_max <- final_burnin <- 1L; freeze_patience <- 2L
   }
@@ -494,6 +523,9 @@ run_scNPM <- function(
     inference_mode = inference_mode, adapt_min = adapt_min, adapt_max = adapt_max,
     freeze_patience = freeze_patience, final_burnin = final_burnin,
     diagnostic_every = diagnostic_every, matching_method = matching_method,
+    freeze_policy=freeze_policy, freeze_window=as.integer(freeze_window),
+    matching_cost_function=if(matching_score=="pairwise") .pairwise_propensity_cost else NULL,
+    progress_every=progress_every,progress_callback=progress_callback,
     verbose = verbose
   )
 
@@ -539,6 +571,8 @@ run_scNPM <- function(
     propensity_scaling$center <- setNames(as.numeric(propensity_scaling$center), predictor_names)
     propensity_scaling$scale <- setNames(as.numeric(propensity_scaling$scale), predictor_names)
   }
+  global_reference_scaling <- propensity_scaling
+  if (matching_score=="pairwise") propensity_scaling <- NULL
   smd_covariate_results <- Result$matching_results$smd_covariate_results
   if (!is.null(smd_covariate_results) && is.matrix(smd_covariate_results) &&
       ncol(smd_covariate_results) > 0) {
@@ -563,7 +597,13 @@ run_scNPM <- function(
   criterion_trace <- as.data.frame(Result$criterion_trace)
   names(criterion_trace) <- c("iteration","log_augmented_likelihood","network_prior_kernel","matching_loss","J_aug","stage_code")
   criterion_trace <- criterion_trace[!is.na(criterion_trace$iteration),,drop=FALSE]
-  schedule <- list(frozen_at=if(inference_mode=="staged") Result$frozen_at else NA_integer_,
+  schedule <- list(freeze_reason=Result$freeze_reason,
+    matching_stable=Result$matching_stable,
+    freeze_consensus_fraction=Result$freeze_consensus_fraction,
+    freeze_window_used=Result$freeze_window_used,
+    freeze_policy=freeze_policy,matching_score=matching_score,
+    frozen_cost_definition=if(identical(Result$freeze_reason,"budget_consensus")) "mean over recent valid cost matrices" else "cost at freeze iteration",
+    frozen_at=if(inference_mode=="staged") Result$frozen_at else NA_integer_,
     adapt_min=adapt_min,adapt_max=adapt_max,freeze_patience=freeze_patience,
     minimum_final_burnin=final_burnin,
     actual_final_burnin=if(inference_mode=="staged") num_iter-num_save-Result$frozen_at else NA_integer_,
@@ -677,6 +717,7 @@ run_scNPM <- function(
     inference_mode = inference_mode,
     differential_method = differential_method,
     matching_method = matching_method,
+    matching_score = matching_score,
     smd_cost_matrix = Result$matching_results$smd_cost_matrix,
     frozen_smd_cost_matrix = Result$frozen_smd_cost_matrix,
     matching_objective = list(max_smd=Result$matching_results$matching_max_smd,
@@ -722,6 +763,7 @@ run_scNPM <- function(
     network_covariates = network_values,
     network_covariate_mode = network_covariates,
     propensity_scaling = propensity_scaling,
+    global_reference_scaling = global_reference_scaling,
     propensity_scores = Result$matching_results$propensity_scores,
     final_group_label = Result$group_iter[, ncol(Result$group_iter)],
     # Per-cluster differential networks
@@ -747,11 +789,16 @@ run_scNPM <- function(
         epsilon_lam = epsilon_lam, num_step_lam = num_step_lam,
         eta_mu = 0, tau_sq_mu = 1, lam0_0 = 3, lam1_0 = -2,
         sigma2_lam0 = 0.2, sigma2_lam1 = 0.2, gam = rep(1, K),
-        differential_cutoff = if(differential_method=="frequency") 0.5 else fdr$threshold, covariate_scaling = "pooled",
+        differential_cutoff = if(differential_method=="frequency") 0.5 else fdr$threshold,
+        covariate_scaling = if(matching_score=="pairwise") "pair-specific training-fold" else "pooled",
         network_covariates = network_covariates,
         n_network_covariates = length(network_names),
         network_feature_names = network_names,
         propensity_ridge = propensity_ridge,
+        matching_score=matching_score,
+        pairwise_ridge=if(matching_score=="pairwise") .001 else NULL,
+        pairwise_folds=if(matching_score=="pairwise") 5L else NULL,
+        freeze_policy=freeze_policy,freeze_window=freeze_window,
         reference_update = "current-matching-state",
         quadratic_form = if (network_covariates == "all_reference")
           "centered-shared-2K-references" else "uncentered",
@@ -761,6 +808,7 @@ run_scNPM <- function(
         final_burnin=final_burnin,diagnostic_every=diagnostic_every,
         fdr_level=fdr_level,fdr_scope=fdr_scope,fdr_min_draws=fdr_min_draws,
         fdr_rule=fdr_rule,group_fdr_level=group_fdr_level,verbose=verbose,
+        progress_every=progress_every,progress_file=progress_file,
         group_selection=if(inference_mode=="staged") "bayes_fdr" else "none",
         matching_method=matching_method,smd_cap=NULL
       )

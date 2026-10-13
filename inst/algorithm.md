@@ -7,17 +7,32 @@ component means, precisions, spike/slab allocations and observation parameters.
 Nonzero expression fixes its latent value to log X; missing latent values at
 zero observations are sampled using fixed-step HMC with Metropolis correction.
 After every sweep, component labels are aligned to fixed initial mean anchors.
-Both conditions use the same 2K network references in the propensity regression,
-with pooled scaling of these distances and the measured cell covariates.
+Both conditions use the same 2K network references and any measured cell
+covariates. Condition membership (T or C) is observed throughout. By default,
+each candidate cluster pair has its own balanced ridge logistic regression;
+scaling is learned within each training fold. Global-score mode retains the
+pooled regression and scaling used in earlier versions.
 
 Matching and edge feedback operate during adaptation. All clusters must be
 nonempty and the complete mapping must repeat for freeze_patience sweeps,
-no earlier than adapt_min. Failure to stabilize by adapt_max stops the run.
+no earlier than adapt_min. At adapt_max, the default consensus policy freezes
+the most frequent complete map among the last freeze_window valid states
+(default 100). Tied maps are ranked by maximum cost, then total cost, computed
+from the mean cost matrix over that window, then lexicographically. This is a
+budget-based decision: freeze_reason='budget_consensus' and matching_stable=FALSE
+distinguish it from a stable freeze. Invalid or empty-cluster states do not
+enter the window. With no valid state at all, the sampler still reports an
+error. freeze_policy='error' restores the strict stability requirement.
 Starting with the next sweep after freezing, the feedback multiplier is one
 and the PPI-specific baseline weights are restored. With L=num_iter and
 S=num_save, retained sweeps are L-S+1 through L. A freeze at F leaves L-S-F
 baseline warmup sweeps, required to be at least final_burnin. The default
 minimum retained sample count for BFDR selection is 200.
+
+Default budgets are 5000 total sweeps, 1000 retained sweeps, adapt_max=3000,
+freeze_patience=5 and at least 1000 post-freeze warmup sweeps. Short custom runs
+derive smaller default budgets satisfying the same retention constraints.
+Neither freezing rule by itself establishes MCMC convergence or good balance.
 
 The diagnostic criterion is augmented likelihood plus a network-prior kernel
 minus the matching SMD sum. It is not a jointly optimized objective, and
@@ -55,6 +70,25 @@ saved selections; selection="frequency" explicitly enables descriptive plots.
 
 ## Matching
 
+For each candidate (T_k,C_l), fit logistic regression to its cells using their
+known condition indicators. Equal total weight is assigned to T and C. The
+non-intercept ridge penalty is 0.001 times the total observation weight; the
+intercept receives a numerical penalty of 1e-8. A maximum of five folds is
+allocated by cell index, without consuming the sampler RNG. Each prediction
+uses a fit and predictor scaling from the other folds. For very small pairs
+where a training fold contains only one condition, an in-sample fit supplies
+that fold's predictions; such pairs should be inspected separately. The
+network features themselves are estimated from the full current state, so
+this is cross-fitting of the score regression, not the entire network fit.
+
+The candidate cost is the absolute difference between mean predicted scores,
+divided by sqrt(max((var_T+var_C)/2,1e-12)). Each candidate thus uses a distinct
+conditional score. Scores across different pairs are not a single population
+propensity score. The known T/C labels are responses, not unknown cell types.
+matching_score='global' retains the original pooled propensity-score costs.
+Low assignment cost is relative to competing pairs; inspect the absolute SMDs
+and reference-feature balance even when the correspondence is stable.
+
 At each unfrozen matching call, construct D[k,c] from the cluster means and
 sample variances of the current cell propensity scores. Minimize the ordered
 pair (max_k D[k,phi(k)], sum_k D[k,phi(k)]) over complete bijections.
@@ -78,6 +112,16 @@ which is a separate assignment problem from matching T to C clusters.
 The optimizer's guarantee refers to each current cost matrix. A frozen map is
 not reoptimized at the final state. Its final maximum SMD need not remain
 optimal, nor must the maximum SMD decrease from one iteration to the next.
+
+## Progress
+
+verbose=TRUE reports completed iterations, sampling stage, elapsed time,
+approximate ETA, freeze reason and retained count. The time interval defaults
+to 60 seconds, with additional reports at start, freezing, first retention and
+completion. Reports occur between sweeps; a long sweep can delay a report.
+progress_file optionally appends CSV records with run IDs, including when
+console messages are suppressed. No file is created by default. Reporting
+does not change the RNG state or retained draws.
 
 ## Differential-network threshold selection
 

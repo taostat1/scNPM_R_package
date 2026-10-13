@@ -1,3 +1,30 @@
+# scNPM 1.0.7
+
+* Default to pairwise propensity matching using the known treatment/control
+  indicator. Each candidate cluster pair uses balanced ridge logistic
+  regression, training-fold scaling and up to five prediction folds. Retain
+  shared network-reference features and complete one-to-one assignment by
+  minimum maximum SMD, followed by minimum total SMD. Set matching_score =
+  "global" for the previous pooled-score implementation.
+* Add freeze_policy = "consensus" and freeze_window = 100. Stable complete
+  maps freeze after five unchanged iterations, no earlier than adapt_min.
+  At adapt_max, use the most frequent recent valid complete map, with
+  deterministic cost and map tie breaking. Expose freeze_reason,
+  matching_stable, freeze_consensus_fraction and freeze_window_used.
+  Set freeze_policy = "error" for strict stability-only freezing.
+* Use 5000 total iterations and 1000 retained draws by default, with adapt_max
+  = 3000 and at least 1000 post-freeze warmup iterations. Feedback is disabled
+  after freezing; the retained sampling window remains at the end of the run.
+* Add progress_every = 60 and progress_file. Optional progress reports include
+  iteration, stage, elapsed time, approximate ETA, stability count, freezing
+  reason and retained draws. CSV records include timestamps and run IDs.
+  Console output is quiet by default and uses suppressible R messages.
+* Update the retinal workflow and help pages. Extend regression tests for
+  pairwise assignment, consensus freezing, stage transitions and progress
+  output without changes to the sampler random-number state.
+* Group and directional differential networks continue to use the existing
+  BFDR selection rules.
+
 # scNPM 1.0.6
 
 * Address CRAN review: keep the 39-character title, make all help examples

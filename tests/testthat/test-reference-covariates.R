@@ -176,7 +176,7 @@ scnpm_reference_public_args <- function(K) {
                       B = 3 + (cell * 3) %% 11,
                       C = 1 + (cell * 5) %% 13)
   colnames(expression) <- paste0("cell", cell)
-  list(inference_mode = "coupled", goal_gene_mt = expression,
+  list(inference_mode = "coupled", matching_score = "global", goal_gene_mt = expression,
        cell_t = cbind(treatment = rep(c(1, 0), n / 2L),
                       quality = sin(cell / 3)),
        K = K, ds_seed = 193L, num_iter = 2L, num_save = 1L,
@@ -184,7 +184,7 @@ scnpm_reference_public_args <- function(K) {
        epsilon_lam = 0.001, num_step_lam = 1L)
 }
 
-test_that("public default fits expose all 2K reference features and featurewise balance", {
+test_that("public global-score fits preserve all 2K features and pooled balance", {
   set_threads <- scnpm_reference_internal("set_scNPM_threads")
   previous <- set_threads(1L)
   on.exit(set_threads(previous), add = TRUE)

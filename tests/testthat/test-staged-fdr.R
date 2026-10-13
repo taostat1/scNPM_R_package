@@ -73,6 +73,8 @@ test_that("joint probabilities equal within-draw conditional products", {
 test_that("K=4 staged inference retains eight references and all sixteen pairs", {
   staged_single_thread({
     a <- staged_fixture(4L)
+    # Keep the original global-score regression distinct from new-score tests.
+    a$matching_score <- "global"
     set.seed(28)
     a$goal_gene_mt <- do.call(cbind,lapply(1:4,function(k) {
       exp(matrix(3*diag(4)[,k],4,12)+matrix(rnorm(48,sd=.12),4))
@@ -145,16 +147,18 @@ test_that("label assignment is globally minimal and deterministic", {
   expect_error(assign(matrix(NA_real_,2,2)),"finite square")
 })
 
-test_that("invalid stage budgets and insufficient stability cannot produce discoveries", {
+test_that("invalid stage budgets and opt-in strict stability cannot produce discoveries", {
   args <- staged_fixture()
   args$final_burnin <- 29
   expect_error(staged_run(args),"final_burnin")
   args <- staged_fixture();args$freeze_patience <- 21
-  expect_error(staged_run(args),"freeze_patience")
+  args$freeze_policy <- "error"
+  expect_error(staged_run(args),"Matching did not stabilize")
   args <- staged_fixture();args$inference_mode <- "coupled";args$differential_method <- "bayes_fdr"
   expect_error(staged_run(args),"requires staged")
   staged_single_thread({
     a <- staged_fixture(4L); a$matching_method <- "greedy"
+    a$matching_score <- "global"; a$freeze_policy <- "error"
     expect_error(staged_run(a),"Matching did not stabilize")
   })
 })

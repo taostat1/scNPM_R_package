@@ -1,4 +1,4 @@
-# Complete retinal example for scNPM 1.0.6.
+# Complete retinal example for the scNPM 1.0.7.
 # This script runs MCMC; set the working directory for its output folder.
 
 library(scNPM)
@@ -25,19 +25,23 @@ ppi <- system.file("extdata", "top50_string_interactions_short.tsv",
                    package = "scNPM")
 stopifnot(nzchar(ppi))
 
+out_dir <- "scNPM_example_output"
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+
 fit <- run_scNPM(
   goal_gene_mt = expression, cell_t = cell_t, protein_input = ppi, K = 4,
-  num_iter = 5000, num_save = 2000,
-  inference_mode = "staged", adapt_min = 500, adapt_max = 2000,
-  freeze_patience = 20, final_burnin = 1000,
+  num_iter = 5000, num_save = 1000,
+  inference_mode = "staged", adapt_min = 100, adapt_max = 3000,
+  freeze_patience = 5, final_burnin = 1000,
+  matching_score = "pairwise", freeze_policy = "consensus", freeze_window = 100,
   network_covariates = "all_reference", matching_method = "lexicographic",
   differential_method = "bayes_fdr", fdr_level = 0.05,
   fdr_scope = "frozen", fdr_rule = "delta_threshold",
-  group_fdr_level = 0.05, diagnostic_every = 10, ds_seed = 123
+  group_fdr_level = 0.05, diagnostic_every = 10, ds_seed = 123,
+  verbose = TRUE, progress_every = 60,
+  progress_file = file.path(out_dir, "iteration_progress.csv")
 )
 
-out_dir <- "scNPM_example_output"
-dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 write_csv <- function(x, name, row_names = FALSE) {
   write.csv(x, file.path(out_dir, name), row.names = row_names)
 }
@@ -74,6 +78,8 @@ mapping_changes <- if (nrow(maps) < 2L) 0L else
 write_csv(data.frame(
   runtime_minutes = as.numeric(fit$runtime, units = "mins"),
   frozen_at = fit$sampling_schedule$frozen_at,
+  freeze_reason = fit$sampling_schedule$freeze_reason,
+  matching_stable = fit$sampling_schedule$matching_stable,
   adaptation_iterations = sum(fit$stage_history$stage == "adaptation"),
   mapping_changes = mapping_changes,
   retained_draws = fit$sampling_schedule$retained_draws,
