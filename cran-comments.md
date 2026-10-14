@@ -1,21 +1,15 @@
-## Update: scNPM 1.0.7
+## Update: scNPM 1.0.8
 
-This update introduces pairwise propensity matching, consensus freezing at the
-adaptation limit, and optional elapsed-time progress and CSV logging.
-The earlier global matching and strict freezing are available through arguments.
-Examples remain self-contained; console progress is quiet by default and uses
-suppressible message conditions.
+This patch adds a damped Newton fallback for nonconvergent pairwise ridge
+logistic fits. The statistical objective and existing convergent path are
+unchanged.
 
 ## Test environment
 
-Windows 11 x64, R 4.5.2 UCRT, Rtools45 (GCC 14.3.0).
+* Windows, R 4.5.2, Rtools45
+* R CMD check --no-manual --no-build-vignettes: Status OK
+* Tests: 576 passed; 0 failures, warnings or skips
+* Source build and Windows binary installation succeeded
+* Separate Windows binary installation and solver smoke test passed
 
-## Check results
-
-R CMD check --no-manual --no-build-vignettes scNPM_1.0.7.tar.gz:
-0 errors, 0 warnings, 0 notes (Status: OK).
-All examples and testthat regression tests passed.
-
-The Windows binary was also installed into a separate library and exercised
-with a small sampling run. Package version, consensus freezing, retained draws,
-and progress CSV output were verified.
+The PDF manual was not built in this local check.

@@ -1,6 +1,6 @@
 # scNPM: Single-Cell Network Propensity Matching
 
-Version **1.0.7** estimates heterogeneous gene conditional-dependence networks
+Version **1.0.8** estimates heterogeneous gene conditional-dependence networks
 and compares matched clusters across two conditions.
 
 ## Installation
@@ -36,10 +36,10 @@ For a separately supplied package archive, use:
 
 ```r
 # Built source archive
-install.packages("scNPM_1.0.7.tar.gz", repos = NULL, type = "source")
+install.packages("scNPM_1.0.8.tar.gz", repos = NULL, type = "source")
 
 # Windows binary archive, if supplied for your R version
-# install.packages("scNPM_1.0.7.zip", repos = NULL, type = "win.binary")
+# install.packages("scNPM_1.0.8.zip", repos = NULL, type = "win.binary")
 ```
 
 Source installation requires R >= 4.0 and a compatible C++17 toolchain;

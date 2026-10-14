@@ -16,6 +16,40 @@
   beta<-beta+step
   if(max(abs(step))<1e-7){converged<-TRUE;break}
  }
+ if(!converged || any(!is.finite(beta))) {
+  # Preserve the original fast path. Restart an oscillating Newton fit on the
+  # same penalized likelihood, using Armijo backtracking instead of full steps.
+  # Labels, data, ridge strength and the sampler random-number state are unchanged.
+  objective<-function(b) {
+   eta<-drop(A%*%b)
+   sum(weights*(pmax(eta,0)+log1p(exp(-abs(eta)))-y*eta))+sum(penalty*b*b)/2
+  }
+  beta<-numeric(ncol(A));value<-objective(beta)
+  for(it in 1:100) {
+   p<-stats::plogis(drop(A%*%beta))
+   gradient<-drop(crossprod(A,weights*(p-y)))+penalty*beta
+   if(max(abs(gradient))/sum(weights)<1e-10)break
+   w<-pmax(p*(1-p),1e-10)*weights
+   H<-crossprod(A,A*w)+diag(penalty)
+   direction<-drop(solve(H,gradient));decrement<-sum(gradient*direction)
+   if(!all(is.finite(direction)) || !is.finite(decrement) || decrement<=0)break
+   alpha<-1;accepted<-FALSE
+   for(backtrack in 0:50) {
+    candidate<-beta-alpha*direction;candidate_value<-objective(candidate)
+    slack<-10*.Machine$double.eps*max(1,abs(value))
+    if(is.finite(candidate_value) && candidate_value<=value-1e-4*alpha*decrement+slack) {
+     accepted<-TRUE;break
+    }
+    alpha<-alpha/2
+   }
+   if(!accepted)break
+   beta<-candidate;value<-candidate_value
+  }
+  # Verify stationarity, including a solution reached on the final step.
+  gradient<-drop(crossprod(A,weights*(stats::plogis(drop(A%*%beta))-y)))+penalty*beta
+  converged<-all(is.finite(beta)) && all(is.finite(gradient)) &&
+    max(abs(gradient))/sum(weights)<1e-10
+ }
  if(!converged || any(!is.finite(beta)))stop("Pairwise logistic solver did not converge; inspect numerical inputs")
  pmin(1-1e-8,pmax(1e-8,stats::plogis(pmax(-30,pmin(30,drop(B%*%beta))))))
 }

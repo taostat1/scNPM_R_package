@@ -1,3 +1,14 @@
+# scNPM 1.0.8
+
+* Add a damped Newton fallback when the pairwise ridge logistic fit fails to
+  converge with full Newton steps. Backtracking uses the same balanced,
+  penalized likelihood and verifies the final gradient.
+* Preserve the existing path for fits that already converge. The fallback
+  does not change the ridge penalty, cross-fitting folds, matching criterion,
+  BFDR rules, sampling schedule, or random-number state.
+* Add regression coverage for fallback convergence and agreement with an
+  independent optimizer.
+
 # scNPM 1.0.7
 
 * Default to pairwise propensity matching using the known treatment/control

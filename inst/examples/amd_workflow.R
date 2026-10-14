@@ -1,4 +1,4 @@
-# Complete retinal example for the scNPM 1.0.7.
+# Complete retinal example for the scNPM 1.0.8.
 # This script runs MCMC; set the working directory for its output folder.
 
 library(scNPM)
