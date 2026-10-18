@@ -6,7 +6,9 @@ The state includes latent expression, cluster memberships, mixture weights,
 component means, precisions, spike/slab allocations and observation parameters.
 Nonzero expression fixes its latent value to log X; missing latent values at
 zero observations are sampled using fixed-step HMC with Metropolis correction.
-After every sweep, component labels are aligned to fixed initial mean anchors.
+Component labels are aligned to fixed initial mean anchors. After freezing,
+paired mode permutes whole matched pairs jointly; independent mode aligns each
+condition separately.
 Both conditions use the same 2K network references and any measured cell
 covariates. Condition membership (T or C) is observed throughout. By default,
 each candidate cluster pair has its own balanced ridge logistic regression;
@@ -23,10 +25,10 @@ budget-based decision: freeze_reason='budget_consensus' and matching_stable=FALS
 distinguish it from a stable freeze. Invalid or empty-cluster states do not
 enter the window. With no valid state at all, the sampler still reports an
 error. freeze_policy='error' restores the strict stability requirement.
-Starting with the next sweep after freezing, the feedback multiplier is one
-and the PPI-specific baseline weights are restored. With L=num_iter and
+Starting with the next sweep after freezing, adaptation feedback stops and
+the selected final prior is activated (paired by default in 1.1.0). With L=num_iter and
 S=num_save, retained sweeps are L-S+1 through L. A freeze at F leaves L-S-F
-baseline warmup sweeps, required to be at least final_burnin. The default
+final-model warmup sweeps, required to be at least final_burnin. The default
 minimum retained sample count for BFDR selection is 200.
 
 Default budgets are 5000 total sweeps, 1000 retained sweeps, adapt_max=3000,
@@ -38,10 +40,54 @@ The diagnostic criterion is augmented likelihood plus a network-prior kernel
 minus the matching SMD sum. It is not a jointly optimized objective, and
 stochastic updates need not increase it.
 
+
+## Final network prior
+
+```r
+# These settings are also recorded in fit$paired_prior and fit$provenance.
+# Add them to the run_scNPM call above:
+# network_prior = "paired",
+# paired_discordance = 0.75,
+# shared_edge_correlation = 0.995,
+# ppi_reference = "control"
+```
+
+For each frozen pair and gene pair, S=(gamma_T,gamma_C) takes states
+00 (neither), 10 (treatment only), 01 (control only), 11 (both).
+Let b=ppi_prior_low and d=paired_discordance*b*(1-b). Base state factors are
+(1-b-d,d,d,b-d). For an edge with PPI weight pi, define
+R={pi/(1-pi)}/{b/(1-b)}. `ppi_reference="control"` multiplies the 01 and 11
+factors by R. `"treatment"` multiplies 10 and 11. `"both"` multiplies 10/01
+by R and 11 by R^2. Normalize the four factors before using them. The default
+control setting matches control-derived PPI experiments; use both when PPI
+evidence is condition-neutral. A missing PPI edge has R=1, not a forced absence.
+
+The Gaussian coefficient kernels have covariance matrices
+
+$$\Sigma_{00}=\operatorname{diag}(v_0^2,v_0^2),\quad
+\Sigma_{10}=\operatorname{diag}(v_1^2,v_0^2),\quad
+\Sigma_{01}=\operatorname{diag}(v_0^2,v_1^2),$$
+$$\Sigma_{11}=v_1^2\begin{pmatrix}1&r\\r&1\end{pmatrix}.$$
+
+Here r=shared_edge_correlation; the default 0.995 strongly favors similar
+signed coefficients for shared edges. It is not a difference-rate parameter.
+All factors define one globally normalized prior with positive-definite
+precision constraints; the four factors are not unconditional state marginals.
+No gene modules, module learning, latent-expression Gibbs sampler or temperature
+ladder is included. The existing observation-model HMC remains unchanged.
+The paired graph kernel integrates one treatment/control coefficient pair
+when drawing its state and immediately restores both coefficients.
+
+BFDR levels and tie handling are unchanged. A matched edge's p10/p01 now comes
+from this joint conditional, and group probabilities are p10+p11 or p01+p11.
+Matching freeze is not a convergence certificate. Performance from private
+development runs using other observation samplers is not release validation
+for this package, and no real-data precision or recall is guaranteed.
+
 ## Group-network BFDR
 
 For each condition d and subtype k, use all H=G*(G-1)/2 unordered gene pairs.
-Let p[e] be the retained mean of the baseline conditional slab probability.
+Let p[e] be the retained mean of the final-model conditional slab probability.
 It is recovered from the saved joint quantities as p10+p11 for treatment or
 p01+p11 for control. The marginal is independent of which counterpart is used;
 select_group_edges checks this numerical consistency. It uses the frozen-pair
@@ -58,7 +104,7 @@ For any reported set, conditional on the data, linearity of expectation gives
 E[FDP|X] = sum_{e in E} Pr(z[e]=0|X) / max(1,|E|). Independence across edges is
 not needed. With estimated probabilities, if their maximum absolute error is
 epsilon, the selected posterior expected FDP is at most alpha+epsilon.
-The bound concerns spike/slab allocations under the baseline posterior.
+The bound concerns spike/slab allocations under the selected final posterior.
 
 Every condition/subtype and gene-panel fit is a separate family. Select before
 restriction to shared genes; reuse the same saved mask for figures, exports
@@ -125,8 +171,11 @@ does not change the RNG state or retained draws.
 
 ## Differential-network threshold selection
 
-Let e=(k,j,t), j<t. Using the final baseline-model draws, average within-draw
-conditional products to estimate p10[e] and p01[e] for the frozen counterpart.
+Let e=(k,j,t), j<t. Using final draws, average the joint four-state
+conditional to estimate p10[e] and p01[e] for a frozen paired-prior counterpart.
+For independent priors, use within-draw conditional products. For alternative
+counterparts, use products of the paired-model conditional marginals within
+each draw; this does not change the prior or refit an alternative mapping.
 Set Delta[e]=p10[e]-p01[e], direction[e]=sign(Delta[e]), and
 ell[e]=1-max(p10[e],p01[e]). The direction asserts unequal spike/slab allocation
 states in the indicated groups, not gene absence or directed regulation.
@@ -137,7 +186,7 @@ For S(tau)={e:|Delta[e]|>tau}, define
 
 All K*G*(G-1)/2 candidates are a single family, with at most one direction per
 candidate. For any data-determined nonempty set S, conditional on the data and
-the baseline posterior,
+the selected final posterior,
 
     E[FDP(S)|X] = (1/|S|) * sum_{e in S} Pr(reported direction is false|X).
 

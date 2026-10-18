@@ -11,7 +11,7 @@
 #' extracted. Returned masks should be shared by plotting and sensitivity
 #' calculations. BFDR applies to each original network, not to a subsequent
 #' union over subtypes. Edge states are continuous spike/slab allocations.
-#' This estimates posterior expected FDP under the baseline model; it is not
+#' This estimates posterior expected FDP under the selected final model; it is not
 #' a uniform frequentist FDR guarantee. Existing staged 1.0.5 fits with saved
 #' joint probabilities can be processed without rerunning the sampler.
 #'
@@ -140,6 +140,6 @@ select_group_edges <- function(result, fdr_level = 0.05, min_draws = 200L) {
        counterpart_max_difference = counterpart_maxdiff,
        family = "Each condition and subtype separately, over all unordered gene pairs",
        probability_source = "Rao-Blackwell marginals: treatment p10+p11; control p01+p11",
-       interpretation = "Monte Carlo estimate of posterior expected FDP under the baseline model",
+       interpretation = "Monte Carlo estimate of posterior expected FDP under the selected final model",
        frequentist_guarantee = FALSE)
 }

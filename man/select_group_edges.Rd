@@ -35,7 +35,7 @@ Selection is performed on the full gene panel before any subnetwork is
 extracted. Returned masks should be shared by plotting and sensitivity
 calculations. BFDR applies to each original network, not to a subsequent
 union over subtypes. Edge states are continuous spike/slab allocations.
-This estimates posterior expected FDP under the baseline model; it is not
+This estimates posterior expected FDP under the selected final model; it is not
 a uniform frequentist FDR guarantee. Existing staged 1.0.5 fits with saved
 joint probabilities can be processed without rerunning the sampler.
 }

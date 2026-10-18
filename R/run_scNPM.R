@@ -4,7 +4,7 @@
 #' The default first adapts networks and matching, aligns component labels to
 #' fixed initial mean anchors, and freezes a complete mapping after sustained
 #' stability. It then disables counterpart feedback, completes post-switch
-#' burn-in and retains final baseline-model samples. At the adaptation limit,
+#' burn-in and retains samples under the selected final network prior. At the adaptation limit,
 #' the default freezes a recent consensus map and records that stability was not established.
 #'
 #' Network features are centered distances to all 2*K current references.
@@ -52,10 +52,42 @@
 #' @param num_step_theta Positive integer number of HMC steps for latent expression.
 #' @param epsilon_lam Positive fixed HMC step size for dropout parameters.
 #' @param num_step_lam Positive integer number of HMC steps for dropout parameters.
-#' @param ppi_prior_low Baseline inclusion probability for edges without a PPI
+#' @param ppi_prior_low Baseline edge-state factor for edges without a PPI
 #'   interaction (default 0.05).
 #' @param ppi_prior_high Baseline inclusion probability for PPI-supported edges
-#'   (default 0.5). Requires `0 < ppi_prior_low <= ppi_prior_high <= 1 - 1e-6`.
+#'   (default 0.5). In the paired model this defines an odds multiplier, not a
+#'   marginal edge probability. Requires `0 < ppi_prior_low <= ppi_prior_high <= 1 - 1e-6`.
+#'
+#' @param network_prior `auto` (default) resolves to `paired` for staged fits
+#'   and `independent` for coupled fits. `paired` jointly models matched T/C
+#'   edge states after freezing. `independent` retains the 1.0.8 network prior.
+#' @param paired_discordance Positive factor at most 1 (default 0.75) controlling
+#'   discordant-state weights. With b=ppi_prior_low and d=paired_discordance*b*(1-b),
+#'   base weights for 00,10,01,11 are (1-b-d,d,d,b-d). It is not the fraction
+#'   of differential edges and is separate from adaptation's edge_prob_adj.
+#' @param shared_edge_correlation Correlation in the bivariate slab kernel
+#'   for state 11, in [0,1), default 0.995. Larger values favor closer signed
+#'   precision coefficients for common edges; 10/01 remain uncorrelated.
+#' @param ppi_reference Condition supported by the PPI source: `control`
+#'   (default), `treatment`, or `both`. Let R be the odds of an edge's PPI
+#'   weight divided by the odds of ppi_prior_low. Multiply the base state
+#'   factor by R for each supported present condition, then normalize.
+#'   Choose both for condition-neutral PPI evidence; control reproduces the
+#'   control-derived PPI design. Ignored by the independent network prior.
+#'
+#' @section Paired network prior:
+#' The four states are (treatment, control): 00, 10, 01, 11. Conditional
+#' Gaussian kernels have diagonal variances (v0^2,v0^2), (v1^2,v0^2),
+#' (v0^2,v1^2), and v1^2 in both conditions for state 11; only state 11 has
+#' the specified correlation. All factors belong to one globally normalized
+#' prior restricted to positive-definite precision matrices. There are no
+#' gene modules or learned module parameters. After freezing, paired column
+#' updates integrate one coefficient pair, draw its state, and immediately
+#' restore both coefficients. Matched components are relabeled together.
+#' The observation-model HMC updates and NPM criterion remain unchanged.
+#' Rao-Blackwell probabilities use the joint four-state conditional on each
+#' retained draw. Unmatched-counterpart probabilities use within-draw marginal
+#' products under this same frozen-pair model, not separate refits with new priors.
 #'
 #' @param network_covariates Network features in the propensity model.
 #'   `"all_reference"` (default) evaluates every cell against all current
@@ -153,7 +185,8 @@
 #' \item{Result}{Retained sampler output, including parameter draws and selected trace summaries}
 #'
 #' \item{protein_adjacency}{Symmetric binary PPI adjacency matrix; diagonal entries are zero.}
-#' \item{edge_prior}{Per-edge baseline inclusion probabilities used at every edge update. Diagonal entries are unused.}
+#' \item{edge_prior}{Per-edge PPI weights; the paired prior converts their odds relative to ppi_prior_low into state multipliers. Diagonal entries are unused.}
+#' \item{network_prior, paired_prior}{Resolved prior and paired-model settings; paired_prior is NULL for independent fits.}
 #' \item{provenance}{Package version, input fingerprint, native-library fingerprint, execution environment, times and analysis settings.}
 #'
 #' @examples
@@ -207,7 +240,10 @@ run_scNPM <- function(
     verbose = FALSE,
     matching_score = c("pairwise", "global"),
     freeze_policy = c("consensus", "error"), freeze_window = 100L,
-    progress_every = 60, progress_file = NULL
+    progress_every = 60, progress_file = NULL,
+    network_prior = c("auto", "paired", "independent"),
+    paired_discordance = 0.75, shared_edge_correlation = 0.995,
+    ppi_reference = c("control", "both", "treatment")
 ) {
   if (!is.logical(verbose) || length(verbose) != 1L || is.na(verbose))
     stop("verbose must be TRUE or FALSE.")
@@ -224,6 +260,11 @@ run_scNPM <- function(
   if(length(freeze_window)!=1L || !is.finite(freeze_window) || freeze_window<1 || freeze_window!=as.integer(freeze_window))stop("freeze_window must be a positive integer")
   network_covariates <- match.arg(network_covariates)
   inference_mode <- match.arg(inference_mode)
+  network_prior <- match.arg(network_prior)
+  if (network_prior == "auto") network_prior <- if (inference_mode == "staged") "paired" else "independent"
+  ppi_reference <- match.arg(ppi_reference)
+  if (network_prior == "paired" && inference_mode != "staged")
+    stop("The paired network prior requires staged inference.")
   differential_method <- match.arg(differential_method)
   fdr_scope <- match.arg(fdr_scope)
   matching_method <- match.arg(matching_method)
@@ -300,6 +341,8 @@ run_scNPM <- function(
   } else {
     adapt_min <- adapt_max <- final_burnin <- 1L; freeze_patience <- 2L
   }
+  check_scalar(paired_discordance, "paired_discordance", 0, 1, lower_open = TRUE)
+  check_scalar(shared_edge_correlation, "shared_edge_correlation", 0, 1, upper_open = TRUE)
   check_scalar(ssp_v0, "ssp_v0", 0, lower_open = TRUE)
   check_scalar(ssp_v1, "ssp_v1", ssp_v0, lower_open = TRUE)
   check_scalar(ssp_l, "ssp_l", 0, lower_open = TRUE)
@@ -526,7 +569,9 @@ run_scNPM <- function(
     freeze_policy=freeze_policy, freeze_window=as.integer(freeze_window),
     matching_cost_function=if(matching_score=="pairwise") .pairwise_propensity_cost else NULL,
     progress_every=progress_every,progress_callback=progress_callback,
-    verbose = verbose
+    network_prior=network_prior,paired_base=ppi_prior_low,
+    paired_discordance=paired_discordance,shared_edge_correlation=shared_edge_correlation,
+    ppi_reference=ppi_reference,verbose = verbose
   )
 
   # Calculate MCMC runtime
@@ -609,7 +654,7 @@ run_scNPM <- function(
     actual_final_burnin=if(inference_mode=="staged") num_iter-num_save-Result$frozen_at else NA_integer_,
     retained_start=num_iter-num_save+1L,retained_draws=num_save,
     feedback_disabled_for_retained=inference_mode=="staged",
-    labeling=if(inference_mode=="staged") "minimum squared-mean assignment to fixed initial anchors" else "legacy")
+    labeling=if(network_prior=="paired") "joint matched-pair assignment to fixed initial anchors after freezing" else if(inference_mode=="staged") "minimum squared-mean assignment to fixed initial anchors" else "legacy")
   fdr <- NULL
   if (differential_method=="bayes_fdr") {
     fdr <- select_differential_edges(list(K=K,G=G,gene_names=gene_names,
@@ -768,6 +813,12 @@ run_scNPM <- function(
     final_group_label = Result$group_iter[, ncol(Result$group_iter)],
     # Per-cluster differential networks
     edge_diff_networks = edge_diff_networks,
+    network_prior = network_prior,
+    paired_prior = if (network_prior == "paired") list(
+      base=ppi_prior_low,discordance=paired_discordance,
+      shared_edge_correlation=shared_edge_correlation,ppi_reference=ppi_reference,
+      state_order=c("00","10","01","11"),modules=FALSE,
+      activated_after=schedule$frozen_at,observation_sampler="fixed-step HMC") else NULL,
     protein_adjacency = protein_mat,
     edge_prior = edge_prior,
     provenance = list(
@@ -784,6 +835,8 @@ run_scNPM <- function(
         ds_seed = ds_seed, num_iter = num_iter, num_save = num_save, K = K,
         ssp_v0 = ssp_v0, ssp_v1 = ssp_v1, ssp_l = ssp_l,
         ppi_prior_low = ppi_prior_low, ppi_prior_high = ppi_prior_high,
+        network_prior=network_prior,paired_discordance=paired_discordance,
+        shared_edge_correlation=shared_edge_correlation,ppi_reference=ppi_reference,
         edge_prob_threshold = edge_prob_threshold, edge_prob_adj = edge_prob_adj,
         epsilon_theta = epsilon_theta, num_step_theta = num_step_theta,
         epsilon_lam = epsilon_lam, num_step_lam = num_step_lam,

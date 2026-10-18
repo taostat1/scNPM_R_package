@@ -1,4 +1,4 @@
-# Complete retinal example for the scNPM 1.0.8.
+# Complete retinal example for the scNPM 1.1.0.
 # This script runs MCMC; set the working directory for its output folder.
 
 library(scNPM)
@@ -30,6 +30,7 @@ dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 fit <- run_scNPM(
   goal_gene_mt = expression, cell_t = cell_t, protein_input = ppi, K = 4,
+  network_prior = "paired", ppi_reference = "both", # condition-neutral STRING PPI
   num_iter = 5000, num_save = 1000,
   inference_mode = "staged", adapt_min = 100, adapt_max = 3000,
   freeze_patience = 5, final_burnin = 1000,

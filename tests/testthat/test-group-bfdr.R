@@ -118,7 +118,7 @@ test_that('staged wrapper returns group decisions from the actual conditional dr
   f <- suppressMessages(run_scNPM(x,cbind(condition=rep(0:1,each=12)),K=1,
         num_iter=70,num_save=40,adapt_min=6,adapt_max=20,freeze_patience=4,
         final_burnin=10,fdr_min_draws=20,num_step_theta=2,num_step_lam=2,
-        ds_seed=19,group_fdr_level=.075))
+        ds_seed=19,group_fdr_level=.075,network_prior="independent"))
   expect_equal(f$group_fdr$target,.075)
   expect_equal(f$group_fdr$summary$target,rep(.075,2))
   prob <- getFromNamespace('calculate_edge_probability','scNPM')

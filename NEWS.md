@@ -1,3 +1,20 @@
+# scNPM 1.1.0
+
+* Add a four-state matched-network prior, now the default for staged fits.
+  Joint Gaussian kernels distinguish 00, 10, 01 and 11 support states and
+  correlate the two slab coefficients in state 11. No gene modules are added.
+* Add network_prior, paired_discordance, shared_edge_correlation and
+  ppi_reference. Preserve the independent prior as an explicit option and
+  as the automatic choice for coupled inference. Record resolved settings.
+* Update matched graph columns jointly with immediate restoration after
+  integrating each coefficient pair; align matched components together and
+  compute Rao-Blackwell probabilities from the same four-state conditional.
+* Keep NPM, observation-model HMC, stage budgets and BFDR selection rules.
+* Fix the CRAN macOS/Clang test failure: strict non-stabilization is tested
+  with patience greater than the available adaptation budget, rather than
+  assuming one stochastic K=4 trajectory cannot stabilize. Do not skip tests.
+* Keep native test execution at one thread on constrained check machines.
+
 # scNPM 1.0.8
 
 * Add a damped Newton fallback when the pairwise ridge logistic fit fails to

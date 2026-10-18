@@ -19,8 +19,11 @@ uses the observed condition indicator, balances the two conditions' total
 weights and standardizes predictors within each training fold. Global scores
 remain available with pooled scaling. Default staged inference freezes a
 stable complete matching or selects a recent consensus map at the adaptation
-limit. It then disables feedback and discards a post-switch burn-in before retaining baseline-model
-draws. Group networks use per-subtype BFDR selection from marginal slab
+limit. It then disables feedback and discards a post-switch burn-in before retaining final-model
+draws. Staged fits use a four-state paired prior by default, with optional
+independent priors for compatibility. Paired precision updates and joint
+relabeling preserve frozen partners. No gene modules are introduced.
+Group networks use per-subtype BFDR selection from marginal slab
 probabilities. Directional edge selection controls an estimated posterior expected
 FDP, with a conservative all-counterparts option; it is not a uniform
 frequentist FDR guarantee. Coupled mode with global scores and greedy

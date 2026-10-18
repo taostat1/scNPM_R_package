@@ -1,6 +1,6 @@
 #' Select Differential Edges by Posterior Directional Error
 #'
-#' Uses the final baseline-model Rao-Blackwell probabilities from a staged
+#' Uses the final final-model Rao-Blackwell probabilities from a staged
 #' run. The selection unit is one treatment cluster and unordered gene pair;
 #' all K clusters form a single family. The most supported direction under
 #' the frozen map is reported. For `all_matchings`, its error is bounded by
@@ -145,6 +145,6 @@ select_differential_edges <- function(result, fdr_level = 0.05,
     status=if(saved<min_draws) "insufficient_draws" else "estimated",
     retained_draws=saved,min_draws=min_draws,
     family="all treatment clusters x unordered gene pairs; one direction per item",
-    interpretation="Monte Carlo estimate of posterior expected directional FDP under the baseline model",
+    interpretation="Monte Carlo estimate of posterior expected directional FDP under the selected final model",
     frequentist_guarantee=FALSE)
 }

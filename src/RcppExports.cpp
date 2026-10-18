@@ -99,9 +99,20 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// paired_column_diagnostic
+Rcpp::List paired_column_diagnostic(int draws);
+RcppExport SEXP _scNPM_paired_column_diagnostic(SEXP drawsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type draws(drawsSEXP);
+    rcpp_result_gen = Rcpp::wrap(paired_column_diagnostic(draws));
+    return rcpp_result_gen;
+END_RCPP
+}
 // MCMC_with_difficulty_based_matching
-Rcpp::List MCMC_with_difficulty_based_matching(const int num_iter, const int num_save, mat theta_t, mat ind_zero, mat mu_treat, mat mu_ctrl, cube invcov_treat, cube cov_treat, cube invcov_ctrl, cube cov_ctrl, cube edge_treat, cube edge_ctrl, vec group_treat, vec group_ctrl, vec lambda0_t, vec lambda1_t, vec pi_treat, vec pi_ctrl, vec gam, mat cell_t, const int G, const int N_int, const int K, double ssp_v0, double ssp_v1, double ssp_l, double ssp_xi, double epsilon_theta, int num_step_theta, double eta_mu, double tau_sq_mu, double lam0_0, double lam1_0, double sigma2_lam0, double sigma2_lam1, double edge_prob_threshold, double edge_prob_adj, double epsilon_lam, int num_step_lam, Rcpp::Nullable<Rcpp::NumericMatrix> edge_prior, std::string network_covariates, double propensity_ridge, std::string inference_mode, int adapt_min, int adapt_max, int freeze_patience, int final_burnin, int diagnostic_every, std::string matching_method, bool verbose, std::string freeze_policy, int freeze_window, SEXP matching_cost_function, double progress_every, SEXP progress_callback);
-RcppExport SEXP _scNPM_MCMC_with_difficulty_based_matching(SEXP num_iterSEXP, SEXP num_saveSEXP, SEXP theta_tSEXP, SEXP ind_zeroSEXP, SEXP mu_treatSEXP, SEXP mu_ctrlSEXP, SEXP invcov_treatSEXP, SEXP cov_treatSEXP, SEXP invcov_ctrlSEXP, SEXP cov_ctrlSEXP, SEXP edge_treatSEXP, SEXP edge_ctrlSEXP, SEXP group_treatSEXP, SEXP group_ctrlSEXP, SEXP lambda0_tSEXP, SEXP lambda1_tSEXP, SEXP pi_treatSEXP, SEXP pi_ctrlSEXP, SEXP gamSEXP, SEXP cell_tSEXP, SEXP GSEXP, SEXP N_intSEXP, SEXP KSEXP, SEXP ssp_v0SEXP, SEXP ssp_v1SEXP, SEXP ssp_lSEXP, SEXP ssp_xiSEXP, SEXP epsilon_thetaSEXP, SEXP num_step_thetaSEXP, SEXP eta_muSEXP, SEXP tau_sq_muSEXP, SEXP lam0_0SEXP, SEXP lam1_0SEXP, SEXP sigma2_lam0SEXP, SEXP sigma2_lam1SEXP, SEXP edge_prob_thresholdSEXP, SEXP edge_prob_adjSEXP, SEXP epsilon_lamSEXP, SEXP num_step_lamSEXP, SEXP edge_priorSEXP, SEXP network_covariatesSEXP, SEXP propensity_ridgeSEXP, SEXP inference_modeSEXP, SEXP adapt_minSEXP, SEXP adapt_maxSEXP, SEXP freeze_patienceSEXP, SEXP final_burninSEXP, SEXP diagnostic_everySEXP, SEXP matching_methodSEXP, SEXP verboseSEXP, SEXP freeze_policySEXP, SEXP freeze_windowSEXP, SEXP matching_cost_functionSEXP, SEXP progress_everySEXP, SEXP progress_callbackSEXP) {
+Rcpp::List MCMC_with_difficulty_based_matching(const int num_iter, const int num_save, mat theta_t, mat ind_zero, mat mu_treat, mat mu_ctrl, cube invcov_treat, cube cov_treat, cube invcov_ctrl, cube cov_ctrl, cube edge_treat, cube edge_ctrl, vec group_treat, vec group_ctrl, vec lambda0_t, vec lambda1_t, vec pi_treat, vec pi_ctrl, vec gam, mat cell_t, const int G, const int N_int, const int K, double ssp_v0, double ssp_v1, double ssp_l, double ssp_xi, double epsilon_theta, int num_step_theta, double eta_mu, double tau_sq_mu, double lam0_0, double lam1_0, double sigma2_lam0, double sigma2_lam1, double edge_prob_threshold, double edge_prob_adj, double epsilon_lam, int num_step_lam, Rcpp::Nullable<Rcpp::NumericMatrix> edge_prior, std::string network_covariates, double propensity_ridge, std::string inference_mode, int adapt_min, int adapt_max, int freeze_patience, int final_burnin, int diagnostic_every, std::string matching_method, bool verbose, std::string freeze_policy, int freeze_window, SEXP matching_cost_function, double progress_every, SEXP progress_callback, std::string network_prior, double paired_base, double paired_discordance, double shared_edge_correlation, std::string ppi_reference);
+RcppExport SEXP _scNPM_MCMC_with_difficulty_based_matching(SEXP num_iterSEXP, SEXP num_saveSEXP, SEXP theta_tSEXP, SEXP ind_zeroSEXP, SEXP mu_treatSEXP, SEXP mu_ctrlSEXP, SEXP invcov_treatSEXP, SEXP cov_treatSEXP, SEXP invcov_ctrlSEXP, SEXP cov_ctrlSEXP, SEXP edge_treatSEXP, SEXP edge_ctrlSEXP, SEXP group_treatSEXP, SEXP group_ctrlSEXP, SEXP lambda0_tSEXP, SEXP lambda1_tSEXP, SEXP pi_treatSEXP, SEXP pi_ctrlSEXP, SEXP gamSEXP, SEXP cell_tSEXP, SEXP GSEXP, SEXP N_intSEXP, SEXP KSEXP, SEXP ssp_v0SEXP, SEXP ssp_v1SEXP, SEXP ssp_lSEXP, SEXP ssp_xiSEXP, SEXP epsilon_thetaSEXP, SEXP num_step_thetaSEXP, SEXP eta_muSEXP, SEXP tau_sq_muSEXP, SEXP lam0_0SEXP, SEXP lam1_0SEXP, SEXP sigma2_lam0SEXP, SEXP sigma2_lam1SEXP, SEXP edge_prob_thresholdSEXP, SEXP edge_prob_adjSEXP, SEXP epsilon_lamSEXP, SEXP num_step_lamSEXP, SEXP edge_priorSEXP, SEXP network_covariatesSEXP, SEXP propensity_ridgeSEXP, SEXP inference_modeSEXP, SEXP adapt_minSEXP, SEXP adapt_maxSEXP, SEXP freeze_patienceSEXP, SEXP final_burninSEXP, SEXP diagnostic_everySEXP, SEXP matching_methodSEXP, SEXP verboseSEXP, SEXP freeze_policySEXP, SEXP freeze_windowSEXP, SEXP matching_cost_functionSEXP, SEXP progress_everySEXP, SEXP progress_callbackSEXP, SEXP network_priorSEXP, SEXP paired_baseSEXP, SEXP paired_discordanceSEXP, SEXP shared_edge_correlationSEXP, SEXP ppi_referenceSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -160,7 +171,12 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< SEXP >::type matching_cost_function(matching_cost_functionSEXP);
     Rcpp::traits::input_parameter< double >::type progress_every(progress_everySEXP);
     Rcpp::traits::input_parameter< SEXP >::type progress_callback(progress_callbackSEXP);
-    rcpp_result_gen = Rcpp::wrap(MCMC_with_difficulty_based_matching(num_iter, num_save, theta_t, ind_zero, mu_treat, mu_ctrl, invcov_treat, cov_treat, invcov_ctrl, cov_ctrl, edge_treat, edge_ctrl, group_treat, group_ctrl, lambda0_t, lambda1_t, pi_treat, pi_ctrl, gam, cell_t, G, N_int, K, ssp_v0, ssp_v1, ssp_l, ssp_xi, epsilon_theta, num_step_theta, eta_mu, tau_sq_mu, lam0_0, lam1_0, sigma2_lam0, sigma2_lam1, edge_prob_threshold, edge_prob_adj, epsilon_lam, num_step_lam, edge_prior, network_covariates, propensity_ridge, inference_mode, adapt_min, adapt_max, freeze_patience, final_burnin, diagnostic_every, matching_method, verbose, freeze_policy, freeze_window, matching_cost_function, progress_every, progress_callback));
+    Rcpp::traits::input_parameter< std::string >::type network_prior(network_priorSEXP);
+    Rcpp::traits::input_parameter< double >::type paired_base(paired_baseSEXP);
+    Rcpp::traits::input_parameter< double >::type paired_discordance(paired_discordanceSEXP);
+    Rcpp::traits::input_parameter< double >::type shared_edge_correlation(shared_edge_correlationSEXP);
+    Rcpp::traits::input_parameter< std::string >::type ppi_reference(ppi_referenceSEXP);
+    rcpp_result_gen = Rcpp::wrap(MCMC_with_difficulty_based_matching(num_iter, num_save, theta_t, ind_zero, mu_treat, mu_ctrl, invcov_treat, cov_treat, invcov_ctrl, cov_ctrl, edge_treat, edge_ctrl, group_treat, group_ctrl, lambda0_t, lambda1_t, pi_treat, pi_ctrl, gam, cell_t, G, N_int, K, ssp_v0, ssp_v1, ssp_l, ssp_xi, epsilon_theta, num_step_theta, eta_mu, tau_sq_mu, lam0_0, lam1_0, sigma2_lam0, sigma2_lam1, edge_prob_threshold, edge_prob_adj, epsilon_lam, num_step_lam, edge_prior, network_covariates, propensity_ridge, inference_mode, adapt_min, adapt_max, freeze_patience, final_burnin, diagnostic_every, matching_method, verbose, freeze_policy, freeze_window, matching_cost_function, progress_every, progress_callback, network_prior, paired_base, paired_discordance, shared_edge_correlation, ppi_reference));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -224,7 +240,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_scNPM_calculate_propensity_score", (DL_FUNC) &_scNPM_calculate_propensity_score, 2},
     {"_scNPM_calculate_reference_quadratic_forms", (DL_FUNC) &_scNPM_calculate_reference_quadratic_forms, 5},
     {"_scNPM_network_propensity_matching_by_difficulty", (DL_FUNC) &_scNPM_network_propensity_matching_by_difficulty, 15},
-    {"_scNPM_MCMC_with_difficulty_based_matching", (DL_FUNC) &_scNPM_MCMC_with_difficulty_based_matching, 55},
+    {"_scNPM_paired_column_diagnostic", (DL_FUNC) &_scNPM_paired_column_diagnostic, 1},
+    {"_scNPM_MCMC_with_difficulty_based_matching", (DL_FUNC) &_scNPM_MCMC_with_difficulty_based_matching, 60},
     {"_scNPM_update_mu_R", (DL_FUNC) &_scNPM_update_mu_R, 7},
     {"_scNPM_update_pi_R", (DL_FUNC) &_scNPM_update_pi_R, 3},
     {"_scNPM_staged_assignment", (DL_FUNC) &_scNPM_staged_assignment, 1},

@@ -43,7 +43,11 @@ run_scNPM(
   freeze_policy = c("consensus", "error"),
   freeze_window = 100L,
   progress_every = 60,
-  progress_file = NULL
+  progress_file = NULL,
+  network_prior = c("auto", "paired", "independent"),
+  paired_discordance = 0.75,
+  shared_edge_correlation = 0.995,
+  ppi_reference = c("control", "both", "treatment")
 )
 }
 \arguments{
@@ -97,11 +101,12 @@ baseline edge probabilities unchanged by matching feedback.}
 
 \item{num_step_lam}{Positive integer number of HMC steps for dropout parameters.}
 
-\item{ppi_prior_low}{Baseline inclusion probability for edges without a PPI
+\item{ppi_prior_low}{Baseline edge-state factor for edges without a PPI
 interaction (default 0.05).}
 
 \item{ppi_prior_high}{Baseline inclusion probability for PPI-supported edges
-(default 0.5). Requires `0 < ppi_prior_low <= ppi_prior_high <= 1 - 1e-6`.}
+(default 0.5). In the paired model this defines an odds multiplier, not a
+marginal edge probability. Requires `0 < ppi_prior_low <= ppi_prior_high <= 1 - 1e-6`.}
 
 \item{network_covariates}{Network features in the propensity model.
 `"all_reference"` (default) evaluates every cell against all current
@@ -173,6 +178,26 @@ can delay a report. ETA is an approximate extrapolation of elapsed sampling time
 \item{progress_file}{Optional CSV path. Append timestamped progress records
 even when verbose is FALSE; parent directory must exist. Use a separate
 file for each concurrent fit. NULL (default) writes no progress file.}
+
+\item{network_prior}{`auto` (default) resolves to `paired` for staged fits
+and `independent` for coupled fits. `paired` jointly models matched T/C
+edge states after freezing. `independent` retains the 1.0.8 network prior.}
+
+\item{paired_discordance}{Positive factor at most 1 (default 0.75) controlling
+discordant-state weights. With b=ppi_prior_low and d=paired_discordance*b*(1-b),
+base weights for 00,10,01,11 are (1-b-d,d,d,b-d). It is not the fraction
+of differential edges and is separate from adaptation's edge_prob_adj.}
+
+\item{shared_edge_correlation}{Correlation in the bivariate slab kernel
+for state 11, in [0,1), default 0.995. Larger values favor closer signed
+precision coefficients for common edges; 10/01 remain uncorrelated.}
+
+\item{ppi_reference}{Condition supported by the PPI source: `control`
+(default), `treatment`, or `both`. Let R be the odds of an edge's PPI
+weight divided by the odds of ppi_prior_low. Multiply the base state
+factor by R for each supported present condition, then normalize.
+Choose both for condition-neutral PPI evidence; control reproduces the
+control-derived PPI design. Ignored by the independent network prior.}
 }
 \value{
 A named list containing all key analysis results (can be saved with `save()`):
@@ -218,7 +243,8 @@ A named list containing all key analysis results (can be saved with `save()`):
 \item{Result}{Retained sampler output, including parameter draws and selected trace summaries}
 
 \item{protein_adjacency}{Symmetric binary PPI adjacency matrix; diagonal entries are zero.}
-\item{edge_prior}{Per-edge baseline inclusion probabilities used at every edge update. Diagonal entries are unused.}
+\item{edge_prior}{Per-edge PPI weights; the paired prior converts their odds relative to ppi_prior_low into state multipliers. Diagonal entries are unused.}
+\item{network_prior, paired_prior}{Resolved prior and paired-model settings; paired_prior is NULL for independent fits.}
 \item{provenance}{Package version, input fingerprint, native-library fingerprint, execution environment, times and analysis settings.}
 }
 \description{
@@ -226,7 +252,7 @@ Estimate condition-specific gene networks using staged stochastic inference.
 The default first adapts networks and matching, aligns component labels to
 fixed initial mean anchors, and freezes a complete mapping after sustained
 stability. It then disables counterpart feedback, completes post-switch
-burn-in and retains final baseline-model samples. At the adaptation limit,
+burn-in and retains samples under the selected final network prior. At the adaptation limit,
 the default freezes a recent consensus map and records that stability was not established.
 }
 \details{
@@ -241,6 +267,22 @@ The J_aug trace uses an augmented-data likelihood, a state-wise network
 prior kernel and total SMD. It is a diagnostic, not an optimized objective
 or the observed-data marginal likelihood; stochastic decreases are allowed.
 }
+\section{Paired network prior}{
+
+The four states are (treatment, control): 00, 10, 01, 11. Conditional
+Gaussian kernels have diagonal variances (v0^2,v0^2), (v1^2,v0^2),
+(v0^2,v1^2), and v1^2 in both conditions for state 11; only state 11 has
+the specified correlation. All factors belong to one globally normalized
+prior restricted to positive-definite precision matrices. There are no
+gene modules or learned module parameters. After freezing, paired column
+updates integrate one coefficient pair, draw its state, and immediately
+restore both coefficients. Matched components are relabeled together.
+The observation-model HMC updates and NPM criterion remain unchanged.
+Rao-Blackwell probabilities use the joint four-state conditional on each
+retained draw. Unmatched-counterpart probabilities use within-draw marginal
+products under this same frozen-pair model, not separate refits with new priors.
+}
+
 \examples{
 # Small demonstration of staged inference; use longer runs for an analysis.
 set.seed(7)

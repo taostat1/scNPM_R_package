@@ -12,7 +12,7 @@ staged_fixture <- function(K=1L) {
   theta <- t(mu[,labels])+matrix(rnorm(n*G,sd=.12),n,G)
   one <- t(exp(theta)); x <- cbind(one,one)
   rownames(x) <- paste0("G",seq_len(G))
-  list(goal_gene_mt=x,cell_t=cbind(condition=rep(c(1,0),each=n)),K=K,
+  list(network_prior="independent",goal_gene_mt=x,cell_t=cbind(condition=rep(c(1,0),each=n)),K=K,
        num_iter=70L,num_save=40L,adapt_min=6L,adapt_max=20L,
        freeze_patience=4L,final_burnin=10L,diagnostic_every=1L,
        fdr_min_draws=20L,num_step_theta=2L,num_step_lam=2L,
@@ -159,6 +159,9 @@ test_that("invalid stage budgets and opt-in strict stability cannot produce disc
   staged_single_thread({
     a <- staged_fixture(4L); a$matching_method <- "greedy"
     a$matching_score <- "global"; a$freeze_policy <- "error"
+    # No seed or floating-point trajectory can supply more stable iterations
+    # than adapt_max. Previously this test assumed random K=4 maps must change.
+    a$freeze_patience <- a$adapt_max + 1L
     expect_error(staged_run(a),"Matching did not stabilize")
   })
 })

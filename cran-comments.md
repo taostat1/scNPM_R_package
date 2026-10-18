@@ -1,15 +1,12 @@
-## Update: scNPM 1.0.8
+## Update: scNPM 1.1.0
 
-This patch adds a damped Newton fallback for nonconvergent pairwise ridge
-logistic fits. The statistical objective and existing convergent path are
-unchanged.
+Addresses the reported 1.0.6 macOS/Clang test-staged-fdr.R failure. The old
+test expected a random multi-cluster chain not to stabilize, an assumption
+that depended on the numerical trajectory. The replacement retains the
+multi-cluster/global/greedy path but uses freeze_patience > adapt_max, which
+deterministically exercises the strict-stability error.
+Test fixtures use one native thread to respect constrained check environments.
 
-## Test environment
-
-* Windows, R 4.5.2, Rtools45
-* R CMD check --no-manual --no-build-vignettes: Status OK
-* Tests: 576 passed; 0 failures, warnings or skips
-* Source build and Windows binary installation succeeded
-* Separate Windows binary installation and solver smoke test passed
-
-The PDF manual was not built in this local check.
+This release also adds the documented four-state matched-network prior and
+regression tests for its conditional probabilities, sampling and labels.
+The previous network prior remains available with network_prior="independent".

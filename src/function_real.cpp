@@ -808,7 +808,7 @@ void update_edge_with_matching_by_difficulty(
           } else {
             edge_treat(g, i, k) = (tmp < original_prob) ? 1 : 0;
           }
-          edge_treat(i, g, k) = edge_treat(g, i, k); // 对称矩阵
+          edge_treat(i, g, k) = edge_treat(g, i, k); // 瀵圭О鐭╅樀
         }
       }
 
@@ -846,7 +846,7 @@ void update_edge_with_matching_by_difficulty(
           } else {
             edge_ctrl(g, i, k) = (tmp < original_prob) ? 1 : 0;
           }
-          edge_ctrl(i, g, k) = edge_ctrl(g, i, k); // 对称矩阵
+          edge_ctrl(i, g, k) = edge_ctrl(g, i, k); // 瀵圭О鐭╅樀
         }
       }
     }
@@ -1026,6 +1026,26 @@ void update_group(vec &group_t, const cube &invcov_t, const mat &theta_t, const 
 }
 
 #include "staged_inference.h"
+#include "paired_prior.h"
+
+// Internal numerical diagnostic: a small coupled Gaussian column has a
+// finite 16-state reference distribution that can be enumerated independently.
+// [[Rcpp::export]]
+Rcpp::List paired_column_diagnostic(int draws = 25000) {
+  if(draws<1 || draws>1000000) Rcpp::stop("draws must be between 1 and 1000000.");
+  mat L(4,4,fill::zeros); L.diag()=vec({2.,1.5,1.7,2.2});
+  L(0,1)=L(1,0)=.35;L(2,3)=L(3,2)=-.15;
+  vec s={-.7,.4,-.5,.2},prior={.05,.5},zt(2,fill::zeros),zc(2,fill::zeros),b(4,fill::zeros);
+  mat H=L, samples(draws,4),states(draws,2);std::mt19937 rng(110018);
+  for(uword j=0;j<2;++j){uvec ix={j,2+j};H.submat(ix,ix)+=paired_precision(0,.2,.8,.8);}
+  for(int i=-2000;i<draws;++i){
+    if(i%1000==0)Rcpp::checkUserInterrupt();
+    b=paired_column(H,zt,zc,s,prior,.05,.75,.2,.8,.8,0,rng,b);
+    if(i>=0){samples.row(i)=b.t();states.row(i)=(zt+2*zc).t();}
+  }
+  return Rcpp::List::create(Rcpp::_["coefficients"]=samples,Rcpp::_["states"]=states,
+    Rcpp::_["likelihood_precision"]=L,Rcpp::_["linear_term"]=s,Rcpp::_["ppi_weights"]=prior);
+}
 
 // [[Rcpp::export]]
 Rcpp::List MCMC_with_difficulty_based_matching(
@@ -1054,7 +1074,18 @@ Rcpp::List MCMC_with_difficulty_based_matching(
   std::string matching_method = "greedy", bool verbose = false,
   std::string freeze_policy = "consensus", int freeze_window = 100,
   SEXP matching_cost_function = R_NilValue, double progress_every = 60.0,
-  SEXP progress_callback = R_NilValue) {
+  SEXP progress_callback = R_NilValue, std::string network_prior = "independent",
+  double paired_base = 0.05, double paired_discordance = 0.75,
+  double shared_edge_correlation = 0.995, std::string ppi_reference = "control") {
+  const bool paired = network_prior == "paired";
+  if ((!paired && network_prior != "independent") ||
+      (paired && inference_mode != "staged") ||
+      !std::isfinite(paired_base) || paired_base<=0 || paired_base>=1 ||
+      !std::isfinite(paired_discordance) || paired_discordance<=0 || paired_discordance>1 ||
+      !std::isfinite(shared_edge_correlation) || shared_edge_correlation<0 || shared_edge_correlation>=1 ||
+      (ppi_reference!="control" && ppi_reference!="treatment" && ppi_reference!="both"))
+    Rcpp::stop("Invalid paired prior settings; paired inference requires staged sampling.");
+  const int paired_reference=ppi_reference=="control"?0:(ppi_reference=="treatment"?1:2);
 
   if (!std::isfinite(progress_every) || progress_every <= 0)
     Rcpp::stop("progress_every must be a positive number of seconds.");
@@ -1303,6 +1334,18 @@ Rcpp::List MCMC_with_difficulty_based_matching(
     update_mu(mu_treat, theta_treat_t, invcov_treat_owned, group_treat, G, K, eta_mu, tau_sq_mu);
     update_mu(mu_ctrl, theta_ctrl_t, invcov_ctrl_owned, group_ctrl, G, K, eta_mu, tau_sq_mu);
     
+    if (paired && frozen) {
+      iter_seed=static_cast<unsigned long>(randi(distr_param(1,1000000)));
+      paired_graph(invcov_treat_owned,cov_treat_owned,edge_treat_owned,
+        invcov_ctrl_owned,cov_ctrl_owned,edge_ctrl_owned,
+        theta_treat_t,mu_treat,group_treat,theta_ctrl_t,mu_ctrl,group_ctrl,
+        edge_prior_mat,frozen_map,paired_base,paired_discordance,ssp_v0,ssp_v1,
+        shared_edge_correlation,paired_reference,ssp_l,G,K,iter_seed);
+      iter_seed=static_cast<unsigned long>(randi(distr_param(1,1000000)));
+      paired_support(edge_treat_owned,edge_ctrl_owned,invcov_treat_owned,invcov_ctrl_owned,
+        edge_prior_mat,frozen_map,paired_base,paired_discordance,ssp_v0,ssp_v1,
+        shared_edge_correlation,paired_reference,iter_seed);
+    } else {
     iter_seed = static_cast<unsigned long>(randi(distr_param(1, 1000000)));
     update_invcov(invcov_treat_owned, cov_treat_owned, edge_treat_owned, theta_treat_t, mu_treat, group_treat, 
                   ssp_v0, ssp_v1, ssp_l, G, K, iter_seed);
@@ -1319,6 +1362,8 @@ Rcpp::List MCMC_with_difficulty_based_matching(
       mu_treat, mu_ctrl, network_covariates, propensity_ridge, frozen ? &frozen_map : nullptr, matching_method, matching_cost_function
     );
     
+    }
+
     iter_seed = static_cast<unsigned long>(randi(distr_param(1, 1000000)));
     update_group(group_treat, invcov_treat_owned, theta_treat_t, mu_treat, pi_treat, G, n_treat, K, iter_seed);
     
@@ -1332,10 +1377,16 @@ Rcpp::List MCMC_with_difficulty_based_matching(
     update_pi(pi_ctrl, group_ctrl, gam, K);
     
     if (staged) {
+      if (paired && frozen) {
+        paired_align(anchor_treat,anchor_ctrl,mu_treat,mu_ctrl,invcov_treat_owned,
+          invcov_ctrl_owned,cov_treat_owned,cov_ctrl_owned,edge_treat_owned,
+          edge_ctrl_owned,pi_treat,pi_ctrl,group_treat,group_ctrl,frozen_map);
+      } else {
       align_components(anchor_treat, mu_treat, invcov_treat_owned, cov_treat_owned,
                        edge_treat_owned, pi_treat, group_treat);
       align_components(anchor_ctrl, mu_ctrl, invcov_ctrl_owned, cov_ctrl_owned,
                        edge_ctrl_owned, pi_ctrl, group_ctrl);
+      }
       group_t(treat_idx) = group_treat;
       group_t(ctrl_idx) = group_ctrl + static_cast<double>(K);
     }
@@ -1393,7 +1444,10 @@ Rcpp::List MCMC_with_difficulty_based_matching(
       const double ll = augmented_likelihood(theta_t, ind_zero, mu_treat, mu_ctrl,
         invcov_treat_owned, invcov_ctrl_owned, group_treat, group_ctrl,
         treat_idx, ctrl_idx, pi_treat, pi_ctrl, lambda0_t, lambda1_t);
-      const double lp = network_prior_kernel(invcov_treat_owned, invcov_ctrl_owned,
+      const double lp = (paired && !feedback_this_iter) ?
+        paired_prior_kernel(invcov_treat_owned,invcov_ctrl_owned,edge_treat_owned,
+          edge_ctrl_owned,edge_prior_mat,frozen_map,paired_base,paired_discordance,
+          ssp_v0,ssp_v1,shared_edge_correlation,paired_reference,ssp_l) : network_prior_kernel(invcov_treat_owned, invcov_ctrl_owned,
         edge_treat_owned, edge_ctrl_owned, edge_prior_mat, current_map,
         ssp_v0, ssp_v1, ssp_l, edge_prob_threshold,
         feedback_this_iter ? edge_prob_adj : 1.0);
@@ -1409,7 +1463,12 @@ Rcpp::List MCMC_with_difficulty_based_matching(
       if (staged) {
         if (!frozen || save_start - frozen_at < final_burnin)
           Rcpp::stop("Final samples must follow freezing and post-feedback burn-in.");
-        accumulate_joint_probabilities(invcov_treat_owned, invcov_ctrl_owned,
+        if (paired) paired_accumulate(invcov_treat_owned,invcov_ctrl_owned,
+          edge_treat_owned,edge_ctrl_owned,edge_prior_mat,frozen_map,paired_base,
+          paired_discordance,ssp_v0,ssp_v1,shared_edge_correlation,paired_reference,
+          joint00,joint10,joint01,joint11,empirical10,empirical01,
+          batch10,batch01,batch_sizes,save_i*batch_count/num_save);
+        else accumulate_joint_probabilities(invcov_treat_owned, invcov_ctrl_owned,
           edge_treat_owned, edge_ctrl_owned, edge_prior_mat, ssp_v0, ssp_v1,
           joint00, joint10, joint01, joint11, empirical10, empirical01,
           batch10, batch01, batch_sizes, save_i * batch_count / num_save);
@@ -1538,6 +1597,7 @@ Rcpp::List MCMC_with_difficulty_based_matching(
     Rcpp::Named("stage_history") = stage_history,
     Rcpp::Named("matching_history") = map_history,
     Rcpp::Named("criterion_trace") = criterion_trace,
+    Rcpp::Named("network_prior") = network_prior,
     Rcpp::Named("frozen_at") = frozen_at,
     Rcpp::Named("freeze_reason") = freeze_reason,
     Rcpp::Named("matching_stable") = matching_stable,

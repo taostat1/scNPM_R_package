@@ -34,7 +34,7 @@ A list with threshold (strict |Delta P| > threshold), threshold_curve,
   `estimated_error_bound` is the mean bound across selected rows.
 }
 \description{
-Uses the final baseline-model Rao-Blackwell probabilities from a staged
+Uses the final final-model Rao-Blackwell probabilities from a staged
 run. The selection unit is one treatment cluster and unordered gene pair;
 all K clusters form a single family. The most supported direction under
 the frozen map is reported. For `all_matchings`, its error is bounded by
