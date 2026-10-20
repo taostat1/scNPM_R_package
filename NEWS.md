@@ -1,3 +1,12 @@
+# scNPM 1.1.1
+
+* Add union PPI weighting as the default: states 10, 01 and 11 each receive
+  the PPI odds multiplier once. Keep explicit control, treatment and both modes.
+* Remove counterpart edge feedback throughout inference. edge_prob_adj is
+  retained for call compatibility and must equal 1; other values produce an error.
+* Preserve NPM, the observation model, four-state Gaussian kernels, freezing
+  rules, sampling budgets and BFDR selection. Record resolved settings.
+
 # scNPM 1.1.0
 
 * Add a four-state matched-network prior, now the default for staged fits.

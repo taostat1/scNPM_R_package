@@ -10,6 +10,8 @@ inline vec paired_weights(double pi, double base, double discordance, int refere
   const double odds = (pi/(1-pi))/(base/(1-base));
   if (reference == 0 || reference == 2) { q(2)*=odds; q(3)*=odds; }
   if (reference == 1 || reference == 2) { q(1)*=odds; q(3)*=odds; }
+  // Public PPI supports any nonempty state once, without extra shared-state weighting.
+  if (reference == 3) { q(1)*=odds; q(2)*=odds; q(3)*=odds; }
   return q/sum(q);
 }
 inline mat paired_precision(int h, double v0, double v1, double correlation) {

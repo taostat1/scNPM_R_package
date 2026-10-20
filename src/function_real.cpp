@@ -740,27 +740,6 @@ void update_edge_with_matching_by_difficulty(
   const std::string& matching_method = "greedy",
   SEXP matching_cost_function = R_NilValue) {
   
-  double edge_prob_threshold_up = std::max(edge_prob_threshold, 1.0 - edge_prob_threshold);
-  double edge_prob_threshold_down = std::min(edge_prob_threshold, 1.0 - edge_prob_threshold);
-  
-  uvec treat2ctrl_map;
-  if (fixed_map) treat2ctrl_map = *fixed_map;
-  else {
-    Rcpp::List matching_result = network_propensity_matching_impl(
-      theta_t, cell_t, group_treat, group_ctrl, treat_idx, ctrl_idx,
-      invcov_treat, invcov_ctrl, G, K,
-      &mu_treat, &mu_ctrl, network_covariates, propensity_ridge, false, nullptr, matching_method, matching_cost_function);
-    treat2ctrl_map = Rcpp::as<uvec>(matching_result["treat2ctrl_cluster_map"]);
-  }
-  uvec ctrl2treat_map(K);
-  ctrl2treat_map.fill(K); 
-  
-  for (uword k = 0; k < (uword)K; k++) {
-    if (treat2ctrl_map(k) < (uword)K) {
-      ctrl2treat_map(treat2ctrl_map(k)) = k;
-    }
-  }
-
   const uword G_u = static_cast<uword>(G);
   const uword K_u = static_cast<uword>(K);
   // Each unordered pair is owned by one g iteration, so parallel workers
@@ -775,8 +754,6 @@ void update_edge_with_matching_by_difficulty(
       
       if (k < edge_treat.n_slices && k < invcov_treat.n_slices) {
         const mat& invcov_k_treat = invcov_treat.slice(k);
-        int matched_ctrl_cluster = treat2ctrl_map(k);
-        bool is_matched = (matched_ctrl_cluster >= 0 && matched_ctrl_cluster < K);
         
         for (uword i = g+1; i < G_u; i++) {
           double omega_treat = 0.0;
@@ -785,37 +762,16 @@ void update_edge_with_matching_by_difficulty(
           }
           
           const double xi = edge_prior(g, i);
-          const double xi_present = std::max(xi * edge_prob_adj, std::numeric_limits<double>::min());
-          const double xi_absent = std::min(xi / edge_prob_adj, std::max(xi, 1.0 - 1e-6));
           const double original_prob = calculate_edge_probability(omega_treat, ssp_v0, ssp_v1, xi);
           const double tmp = thread_safe_randu(rng);
           
-          if (is_matched) {
-            const uword c = static_cast<uword>(matched_ctrl_cluster);
-            if (original_prob > edge_prob_threshold_up || original_prob < edge_prob_threshold_down) {
-              edge_treat(g, i, k) = (tmp < original_prob) ? 1 : 0;
-            } else if (c < edge_ctrl.n_slices) {
-              double ctrl_edge_val = 0.0;
-              if (g < edge_ctrl.n_rows && i < edge_ctrl.n_cols && c < edge_ctrl.n_slices) {
-                ctrl_edge_val = edge_ctrl(g, i, c);
-              }
-              const double adjusted_xi = (ctrl_edge_val == 1) ? xi_present : xi_absent;
-              const double adjusted_prob = calculate_edge_probability(omega_treat, ssp_v0, ssp_v1, adjusted_xi);
-              edge_treat(g, i, k) = (tmp < adjusted_prob) ? 1 : 0;
-            } else {
-              edge_treat(g, i, k) = (tmp < original_prob) ? 1 : 0;
-            }
-          } else {
-            edge_treat(g, i, k) = (tmp < original_prob) ? 1 : 0;
-          }
+          edge_treat(g, i, k) = (tmp < original_prob) ? 1 : 0;
           edge_treat(i, g, k) = edge_treat(g, i, k); // 瀵圭О鐭╅樀
         }
       }
 
       if (k < edge_ctrl.n_slices && k < invcov_ctrl.n_slices) {
         const mat& invcov_k_ctrl = invcov_ctrl.slice(k);
-        int matched_treat_cluster = ctrl2treat_map(k);
-        bool is_matched_ctrl = (matched_treat_cluster >= 0 && matched_treat_cluster < K);
         
         for (uword i = g+1; i < G_u; i++) {
           double omega_ctrl = 0.0;
@@ -823,29 +779,10 @@ void update_edge_with_matching_by_difficulty(
             omega_ctrl = invcov_k_ctrl(g, i);
           }
           const double xi = edge_prior(g, i);
-          const double xi_present = std::max(xi * edge_prob_adj, std::numeric_limits<double>::min());
-          const double xi_absent = std::min(xi / edge_prob_adj, std::max(xi, 1.0 - 1e-6));
           const double original_prob = calculate_edge_probability(omega_ctrl, ssp_v0, ssp_v1, xi);
           const double tmp = thread_safe_randu(rng);
 
-          if (is_matched_ctrl) {
-            const uword t = static_cast<uword>(matched_treat_cluster);
-            if (original_prob > edge_prob_threshold_up || original_prob < edge_prob_threshold_down) {
-              edge_ctrl(g, i, k) = (tmp < original_prob) ? 1 : 0;
-            } else if (t < edge_treat.n_slices) {
-              double treat_edge_val = 0.0;
-              if (g < edge_treat.n_rows && i < edge_treat.n_cols && t < edge_treat.n_slices) {
-                treat_edge_val = edge_treat(g, i, t);
-              }
-              const double adjusted_xi = (treat_edge_val == 1) ? xi_present : xi_absent;
-              const double adjusted_prob = calculate_edge_probability(omega_ctrl, ssp_v0, ssp_v1, adjusted_xi);
-              edge_ctrl(g, i, k) = (tmp < adjusted_prob) ? 1 : 0;
-            } else {
-              edge_ctrl(g, i, k) = (tmp < original_prob) ? 1 : 0;
-            }
-          } else {
-            edge_ctrl(g, i, k) = (tmp < original_prob) ? 1 : 0;
-          }
+          edge_ctrl(g, i, k) = (tmp < original_prob) ? 1 : 0;
           edge_ctrl(i, g, k) = edge_ctrl(g, i, k); // 瀵圭О鐭╅樀
         }
       }
@@ -1065,7 +1002,7 @@ Rcpp::List MCMC_with_difficulty_based_matching(
   double eta_mu = 0.0, double tau_sq_mu = 1.0,
   double lam0_0 = 2.0, double lam1_0 = -2.0,
   double sigma2_lam0 = 0.25, double sigma2_lam1 = 0.25,
-  double edge_prob_threshold = 0.6, double edge_prob_adj = 0.75,
+  double edge_prob_threshold = 0.6, double edge_prob_adj = 1.0,
   double epsilon_lam = 0.01, int num_step_lam = 10,
   Rcpp::Nullable<Rcpp::NumericMatrix> edge_prior = R_NilValue,
   std::string network_covariates = "all_reference", double propensity_ridge = 1e-6,
@@ -1076,16 +1013,16 @@ Rcpp::List MCMC_with_difficulty_based_matching(
   SEXP matching_cost_function = R_NilValue, double progress_every = 60.0,
   SEXP progress_callback = R_NilValue, std::string network_prior = "independent",
   double paired_base = 0.05, double paired_discordance = 0.75,
-  double shared_edge_correlation = 0.995, std::string ppi_reference = "control") {
+  double shared_edge_correlation = 0.995, std::string ppi_reference = "union") {
   const bool paired = network_prior == "paired";
   if ((!paired && network_prior != "independent") ||
       (paired && inference_mode != "staged") ||
       !std::isfinite(paired_base) || paired_base<=0 || paired_base>=1 ||
       !std::isfinite(paired_discordance) || paired_discordance<=0 || paired_discordance>1 ||
       !std::isfinite(shared_edge_correlation) || shared_edge_correlation<0 || shared_edge_correlation>=1 ||
-      (ppi_reference!="control" && ppi_reference!="treatment" && ppi_reference!="both"))
+      (ppi_reference!="control" && ppi_reference!="treatment" && ppi_reference!="both" && ppi_reference!="union"))
     Rcpp::stop("Invalid paired prior settings; paired inference requires staged sampling.");
-  const int paired_reference=ppi_reference=="control"?0:(ppi_reference=="treatment"?1:2);
+  const int paired_reference=ppi_reference=="control"?0:(ppi_reference=="treatment"?1:(ppi_reference=="both"?2:3));
 
   if (!std::isfinite(progress_every) || progress_every <= 0)
     Rcpp::stop("progress_every must be a positive number of seconds.");
@@ -1111,7 +1048,7 @@ Rcpp::List MCMC_with_difficulty_based_matching(
   if (G < 2 || K < 1 || N_int < 2 || num_iter < 1 || num_save < 1 || num_save > num_iter ||
       !std::isfinite(ssp_v0) || !std::isfinite(ssp_v1) || ssp_v0 <= 0 || ssp_v1 <= ssp_v0 ||
       !std::isfinite(ssp_l) || ssp_l <= 0 || !std::isfinite(ssp_xi) || ssp_xi <= 0 || ssp_xi >= 1 ||
-      !std::isfinite(edge_prob_adj) || edge_prob_adj <= 0 || edge_prob_adj > 1 ||
+      !std::isfinite(edge_prob_adj) || edge_prob_adj != 1.0 ||
       !std::isfinite(edge_prob_threshold) || edge_prob_threshold <= 0 || edge_prob_threshold >= 1 ||
       !std::isfinite(epsilon_theta) || epsilon_theta <= 0 || num_step_theta < 1 ||
       !std::isfinite(epsilon_lam) || epsilon_lam <= 0 || num_step_lam < 1 ||
@@ -1314,7 +1251,7 @@ Rcpp::List MCMC_with_difficulty_based_matching(
   
   for (int t_iter = 0; t_iter < num_iter; t_iter++) {
     Rcpp::checkUserInterrupt();
-    const bool feedback_this_iter = !staged || !frozen;
+    const bool adapting_this_iter = !staged || !frozen;
     const int stage_code = !staged ? 0 : (!frozen ? 1 : (t_iter < save_start ? 2 : 3));
 
     iter_seed = static_cast<unsigned long>(randi(distr_param(1, 1000000)));
@@ -1356,7 +1293,7 @@ Rcpp::List MCMC_with_difficulty_based_matching(
     
     iter_seed = static_cast<unsigned long>(randi(distr_param(1,1000000))); 
     update_edge_with_matching_by_difficulty(
-      edge_treat_owned, edge_ctrl_owned, invcov_treat_owned, invcov_ctrl_owned, ssp_v0, ssp_v1, ssp_xi, edge_prob_threshold, feedback_this_iter ? edge_prob_adj : 1.0,
+      edge_treat_owned, edge_ctrl_owned, invcov_treat_owned, invcov_ctrl_owned, ssp_v0, ssp_v1, ssp_xi, edge_prob_threshold, 1.0,
       G, K, N, iter_seed,
       theta_t, cell_t, group_treat, group_ctrl, treat_idx, ctrl_idx, edge_prior_mat,
       mu_treat, mu_ctrl, network_covariates, propensity_ridge, frozen ? &frozen_map : nullptr, matching_method, matching_cost_function
@@ -1444,25 +1381,25 @@ Rcpp::List MCMC_with_difficulty_based_matching(
       const double ll = augmented_likelihood(theta_t, ind_zero, mu_treat, mu_ctrl,
         invcov_treat_owned, invcov_ctrl_owned, group_treat, group_ctrl,
         treat_idx, ctrl_idx, pi_treat, pi_ctrl, lambda0_t, lambda1_t);
-      const double lp = (paired && !feedback_this_iter) ?
+      const double lp = (paired && !adapting_this_iter) ?
         paired_prior_kernel(invcov_treat_owned,invcov_ctrl_owned,edge_treat_owned,
           edge_ctrl_owned,edge_prior_mat,frozen_map,paired_base,paired_discordance,
           ssp_v0,ssp_v1,shared_edge_correlation,paired_reference,ssp_l) : network_prior_kernel(invcov_treat_owned, invcov_ctrl_owned,
         edge_treat_owned, edge_ctrl_owned, edge_prior_mat, current_map,
         ssp_v0, ssp_v1, ssp_l, edge_prob_threshold,
-        feedback_this_iter ? edge_prob_adj : 1.0);
+        1.0);
       criterion_trace.row(t_iter) = rowvec({double(t_iter+1), ll, lp, match_loss,
                                            ll+lp-match_loss, double(stage_code)});
     }
     if (staged && frozen && !diagnose)
       map_history.row(t_iter) = conv_to<rowvec>::from(frozen_map + 1);
     stage_history.row(t_iter) = rowvec({double(t_iter+1), double(stage_code),
-      feedback_this_iter && edge_prob_adj < 1.0 ? 1.0 : 0.0, double(frozen), double(stable_count)});
+      0.0, double(frozen), double(stable_count)});
     if (t_iter >= save_start) {
       int save_i = t_iter - save_start;
       if (staged) {
         if (!frozen || save_start - frozen_at < final_burnin)
-          Rcpp::stop("Final samples must follow freezing and post-feedback burn-in.");
+          Rcpp::stop("Final samples must follow freezing and post-freeze burn-in.");
         if (paired) paired_accumulate(invcov_treat_owned,invcov_ctrl_owned,
           edge_treat_owned,edge_ctrl_owned,edge_prior_mat,frozen_map,paired_base,
           paired_discordance,ssp_v0,ssp_v1,shared_edge_correlation,paired_reference,

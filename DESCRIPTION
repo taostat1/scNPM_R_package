@@ -1,8 +1,8 @@
 Package: scNPM
 Type: Package
 Title: Single-Cell Network Propensity Matching
-Version: 1.1.0
-Date: 2026-10-18
+Version: 1.1.1
+Date: 2026-10-20
 Authors@R: c(
     person(
       given = "Tao",
@@ -16,8 +16,8 @@ Description: Estimates and compares heterogeneous gene conditional-dependence
     probit observation mechanism represent cellular heterogeneity and zero
     observations. Protein interaction information supplies edge-specific prior
     weights, while network propensity matching links cell clusters across
-    conditions and guides adaptation. Staged inference fixes correspondence after adaptation,
-    disables adaptation feedback, and jointly models matched network edges with
+    conditions. Staged inference fixes correspondence after adaptation
+    and jointly models matched network edges with
     a four-state spike-and-slab prior for posterior group and directional
     differential edge selection. Functions assess balance,
     record criterion diagnostics, and visualize within-condition and

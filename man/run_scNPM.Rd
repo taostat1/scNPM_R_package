@@ -16,7 +16,7 @@ run_scNPM(
   ssp_v1 = 1,
   ssp_l = 1,
   edge_prob_threshold = 0.6,
-  edge_prob_adj = 0.75,
+  edge_prob_adj = 1,
   epsilon_theta = 0.2,
   num_step_theta = 20,
   epsilon_lam = 0.01,
@@ -47,7 +47,7 @@ run_scNPM(
   network_prior = c("auto", "paired", "independent"),
   paired_discordance = 0.75,
   shared_edge_correlation = 0.995,
-  ppi_reference = c("control", "both", "treatment")
+  ppi_reference = c("union", "control", "both", "treatment")
 )
 }
 \arguments{
@@ -86,12 +86,11 @@ expression matrix are ignored. `NULL` assigns the lower prior to all edges.}
 \item{ssp_l}{Positive diagonal shrinkage parameter; the exponential-prior
 rate for precision diagonals is `ssp_l / 2`.}
 
-\item{edge_prob_threshold}{Confidence threshold in (0.5, 1) for deciding
-whether an edge receives matching feedback; this is separate from the
-differential-network cutoff.}
+\item{edge_prob_threshold}{Legacy compatibility argument in (0.5, 1).
+It no longer changes edge updates or differential selection.}
 
-\item{edge_prob_adj}{Feedback multiplier in (0, 1]. A value of 1 leaves
-baseline edge probabilities unchanged by matching feedback.}
+\item{edge_prob_adj}{Legacy compatibility argument, required to be 1.
+Counterpart edge feedback is removed in version 1.1.1.}
 
 \item{epsilon_theta}{Positive fixed HMC step size for latent expression.}
 
@@ -120,7 +119,7 @@ pooled logistic IRLS fit (default 1e-6, also applied to the intercept).
 Used only with matching_score = "global". Pairwise regression uses
 a fixed slope penalty of 0.001 times the total observation weight.}
 
-\item{inference_mode}{`staged` (default) or `coupled` (continuous feedback; use global scores and greedy matching for the earlier workflow).}
+\item{inference_mode}{`staged` (default) or `coupled` (continuously updated matching without freezing; uses the independent network prior).}
 
 \item{adapt_min}{Earliest freezing iteration. NULL uses min(100, floor(adapt_max/2)), at least 2.}
 
@@ -129,7 +128,7 @@ a fixed slope penalty of 0.001 times the total observation weight.}
 \item{freeze_patience}{Consecutive identical complete maps needed to freeze,
 at least 2. NULL uses min(5, floor(adapt_max/2)), at least 2.}
 
-\item{final_burnin}{Minimum iterations after disabling feedback and before
+\item{final_burnin}{Minimum iterations after freezing and before
 retention. NULL uses min(1000, floor((num_iter-num_save)/3)), at least 1.}
 
 \item{diagnostic_every}{Positive interval for final-stage J_aug diagnostics;
@@ -186,18 +185,19 @@ edge states after freezing. `independent` retains the 1.0.8 network prior.}
 \item{paired_discordance}{Positive factor at most 1 (default 0.75) controlling
 discordant-state weights. With b=ppi_prior_low and d=paired_discordance*b*(1-b),
 base weights for 00,10,01,11 are (1-b-d,d,d,b-d). It is not the fraction
-of differential edges and is separate from adaptation's edge_prob_adj.}
+of differential edges.}
 
 \item{shared_edge_correlation}{Correlation in the bivariate slab kernel
 for state 11, in [0,1), default 0.995. Larger values favor closer signed
 precision coefficients for common edges; 10/01 remain uncorrelated.}
 
-\item{ppi_reference}{Condition supported by the PPI source: `control`
-(default), `treatment`, or `both`. Let R be the odds of an edge's PPI
-weight divided by the odds of ppi_prior_low. Multiply the base state
-factor by R for each supported present condition, then normalize.
-Choose both for condition-neutral PPI evidence; control reproduces the
-control-derived PPI design. Ignored by the independent network prior.}
+\item{ppi_reference}{PPI weighting rule: `union` (default), `control`,
+`treatment`, or `both`. Let R be the PPI odds divided by the odds of
+ppi_prior_low. Union multiplies states 10, 01 and 11 by R once;
+control multiplies 01/11; treatment multiplies 10/11; both multiplies
+10/01 by R and 11 by R squared. Normalize the resulting state factors.
+Union treats public PPI as evidence for a nonempty support state without
+an extra shared-state multiplier. Ignored by the independent prior.}
 }
 \value{
 A named list containing all key analysis results (can be saved with `save()`):
@@ -251,7 +251,7 @@ A named list containing all key analysis results (can be saved with `save()`):
 Estimate condition-specific gene networks using staged stochastic inference.
 The default first adapts networks and matching, aligns component labels to
 fixed initial mean anchors, and freezes a complete mapping after sustained
-stability. It then disables counterpart feedback, completes post-switch
+stability. It then completes post-switch
 burn-in and retains samples under the selected final network prior. At the adaptation limit,
 the default freezes a recent consensus map and records that stability was not established.
 }

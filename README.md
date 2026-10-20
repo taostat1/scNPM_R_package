@@ -1,6 +1,6 @@
 # scNPM: Single-Cell Network Propensity Matching
 
-Version **1.1.0** estimates heterogeneous gene conditional-dependence networks
+Version **1.1.1** estimates heterogeneous gene conditional-dependence networks
 and compares matched clusters across two conditions.
 
 ## Installation
@@ -36,10 +36,10 @@ For a separately supplied package archive, use:
 
 ```r
 # Built source archive
-install.packages("scNPM_1.1.0.tar.gz", repos = NULL, type = "source")
+install.packages("scNPM_1.1.1.tar.gz", repos = NULL, type = "source")
 
 # Windows binary archive, if supplied for your R version
-# install.packages("scNPM_1.1.0.zip", repos = NULL, type = "win.binary")
+# install.packages("scNPM_1.1.1.zip", repos = NULL, type = "win.binary")
 ```
 
 Source installation requires R >= 4.0 and a compatible C++17 toolchain;
@@ -107,7 +107,7 @@ Use `protein_input = NULL` to use the common low baseline prior for all pairs.
 ```r
 fit <- run_scNPM(
   goal_gene_mt = expression, cell_t = cell_t, protein_input = ppi, K = 4,
-  network_prior = "paired", ppi_reference = "both", # condition-neutral STRING PPI
+  network_prior = "paired", ppi_reference = "union", # public STRING PPI
   num_iter = 5000, num_save = 1000,
   inference_mode = "staged", adapt_min = 100, adapt_max = 3000,
   freeze_patience = 5, final_burnin = 1000,
@@ -123,7 +123,7 @@ fit <- run_scNPM(
 The example retains iterations 4001--5000. Matching freezes no later than
 iteration 3000, leaving at least 1000 final-model warmup sweeps. Five consecutive
 identical complete maps allow an earlier stable freeze. At the adaptation cap,
-the default uses the most frequent recent valid map, disables feedback, and
+the default uses the most frequent recent valid map and
 continues warmup and sampling. Inspect `fit$sampling_schedule$freeze_reason`
 (`stable` or `budget_consensus`) and `matching_stable`; a budget freeze is not
 evidence that correspondence or the MCMC chain has converged. With no valid
@@ -318,7 +318,7 @@ Runtime, dimensions, stages and diagnostic values are returned in the result.
 
 ## The default staged algorithm
 
-1. Update the latent expression, mixture and network states with matching feedback.
+1. Update latent expression, mixture and network states; recompute NPM without counterpart edge feedback.
    Align component labels to fixed initial mean anchors. The NPM matching is a
    complete assignment minimizing maximum cluster propensity-score SMD, then total SMD.
    Exact ties use a fixed traversal; no SMD cap is applied.
@@ -329,7 +329,7 @@ Runtime, dimensions, stages and diagnostic values are returned in the result.
    maximum cost, then total cost, on the window's average cost matrix, followed
    by lexicographic map order. `freeze_policy = "error"` requests the previous
    strict rule. The schedule records which freezing rule was used.
-3. From the next iteration, disable adaptation feedback and activate the
+3. From the next iteration, activate the
    selected final network prior. The default jointly samples four edge states
    for matched pairs. Finish at least `final_burnin` iterations before retaining
    the last `num_save` draws. Matched components are relabeled together so their
@@ -449,7 +449,7 @@ across sampling iterations. Freezing preserves that map as costs change.
 
 Use `inference_mode = "coupled", differential_method = "frequency",
 matching_method = "greedy"` for the
-1.0.3 continuous-feedback algorithm. Its +/-0.5 selections are descriptive.
+earlier matching workflow, with legacy edge feedback removed. Its +/-0.5 selections are descriptive.
 Posterior error selection rejects coupled-mode results. Old and new draws
 must not be pooled. K=4 still has four clusters per condition, not eight.
 
@@ -500,7 +500,7 @@ are inclusion weights. The paired prior uses their odds ratios as described
 below. The positive-definite matrix constraint is part of the joint prior.
 
 
-## Four-state matched-network prior in 1.1.0
+## Four-state matched-network prior in 1.1.1
 
 ```r
 # These settings are also recorded in fit$paired_prior and fit$provenance.
@@ -508,18 +508,18 @@ below. The positive-definite matrix constraint is part of the joint prior.
 # network_prior = "paired",
 # paired_discordance = 0.75,
 # shared_edge_correlation = 0.995,
-# ppi_reference = "control"
+# ppi_reference = "union"
 ```
 
 For each frozen pair and gene pair, S=(gamma_T,gamma_C) takes states
 00 (neither), 10 (treatment only), 01 (control only), 11 (both).
 Let b=ppi_prior_low and d=paired_discordance*b*(1-b). Base state factors are
 (1-b-d,d,d,b-d). For an edge with PPI weight pi, define
-R={pi/(1-pi)}/{b/(1-b)}. `ppi_reference="control"` multiplies the 01 and 11
-factors by R. `"treatment"` multiplies 10 and 11. `"both"` multiplies 10/01
-by R and 11 by R^2. Normalize the four factors before using them. The default
-control setting matches control-derived PPI experiments; use both when PPI
-evidence is condition-neutral. A missing PPI edge has R=1, not a forced absence.
+R={pi/(1-pi)}/{b/(1-b)}. The default `ppi_reference="union"` multiplies
+10, 01 and 11 by R once. Public PPI supports a nonempty state without an
+additional multiplier for state 11. Control multiplies 01/11; treatment
+multiplies 10/11; both multiplies 10/01 by R and 11 by R squared.
+Normalize the factors. Missing PPI edges have R=1 and are not forced absent.
 
 The Gaussian coefficient kernels have covariance matrices
 

@@ -15,7 +15,7 @@ each candidate cluster pair has its own balanced ridge logistic regression;
 scaling is learned within each training fold. Global-score mode retains the
 pooled regression and scaling used in earlier versions.
 
-Matching and edge feedback operate during adaptation. All clusters must be
+Matching is updated during adaptation; counterpart edge feedback is removed. All clusters must be
 nonempty and the complete mapping must repeat for freeze_patience sweeps,
 no earlier than adapt_min. At adapt_max, the default consensus policy freezes
 the most frequent complete map among the last freeze_window valid states
@@ -25,8 +25,7 @@ budget-based decision: freeze_reason='budget_consensus' and matching_stable=FALS
 distinguish it from a stable freeze. Invalid or empty-cluster states do not
 enter the window. With no valid state at all, the sampler still reports an
 error. freeze_policy='error' restores the strict stability requirement.
-Starting with the next sweep after freezing, adaptation feedback stops and
-the selected final prior is activated (paired by default in 1.1.0). With L=num_iter and
+Starting with the next sweep after freezing, the selected final prior is activated (paired by default in 1.1.1). With L=num_iter and
 S=num_save, retained sweeps are L-S+1 through L. A freeze at F leaves L-S-F
 final-model warmup sweeps, required to be at least final_burnin. The default
 minimum retained sample count for BFDR selection is 200.
@@ -49,18 +48,18 @@ stochastic updates need not increase it.
 # network_prior = "paired",
 # paired_discordance = 0.75,
 # shared_edge_correlation = 0.995,
-# ppi_reference = "control"
+# ppi_reference = "union"
 ```
 
 For each frozen pair and gene pair, S=(gamma_T,gamma_C) takes states
 00 (neither), 10 (treatment only), 01 (control only), 11 (both).
 Let b=ppi_prior_low and d=paired_discordance*b*(1-b). Base state factors are
 (1-b-d,d,d,b-d). For an edge with PPI weight pi, define
-R={pi/(1-pi)}/{b/(1-b)}. `ppi_reference="control"` multiplies the 01 and 11
-factors by R. `"treatment"` multiplies 10 and 11. `"both"` multiplies 10/01
-by R and 11 by R^2. Normalize the four factors before using them. The default
-control setting matches control-derived PPI experiments; use both when PPI
-evidence is condition-neutral. A missing PPI edge has R=1, not a forced absence.
+R={pi/(1-pi)}/{b/(1-b)}. The default `ppi_reference="union"` multiplies
+10, 01 and 11 by R once. Public PPI supports a nonempty state without an
+additional multiplier for state 11. Control multiplies 01/11; treatment
+multiplies 10/11; both multiplies 10/01 by R and 11 by R squared.
+Normalize the factors. Missing PPI edges have R=1 and are not forced absent.
 
 The Gaussian coefficient kernels have covariance matrices
 
@@ -151,7 +150,7 @@ If no all-finite permutation exists, every complete permutation has infinite
 maximum and total cost. Return the identity by the fixed tie rule. Missing SMDs
 from empty clusters are kept missing in diagnostics and treated as infinite
 for provisional assignment. Empty clusters prevent freezing. Finite but large
-SMDs are not discarded. Stable nonempty complete maps freeze after the configured patience interval; feedback is disabled in subsequent iterations and final warmup precedes
+SMDs are not discarded. Stable nonempty complete maps freeze after the configured patience interval; final-model warmup follows freezing and precedes
 retention. Label alignment still uses minimum squared distance to fixed anchors,
 which is a separate assignment problem from matching T to C clusters.
 

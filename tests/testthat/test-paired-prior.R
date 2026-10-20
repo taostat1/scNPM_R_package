@@ -4,6 +4,7 @@ paired_reference_weights <- function(pi, base=.05, d=.75, reference="control") {
   odds<-(pi/(1-pi))/(base/(1-base))
   if(reference %in% c("control","both"))q[c(3,4)]<-q[c(3,4)]*odds
   if(reference %in% c("treatment","both"))q[c(2,4)]<-q[c(2,4)]*odds
+  if(reference == "union")q[2:4]<-q[2:4]*odds
   q/sum(q)
 }
 paired_reference_cov <- function(h,v0=.02,v1=1,r=.995) {
@@ -28,7 +29,7 @@ paired_fixture <- function(K=1L) {
 }
 
 test_that("paired probabilities use the full four-state conditional, for each PPI source", {
-  for(ref in c("control","treatment","both")) {
+  for(ref in c("control","treatment","both","union")) {
     a<-paired_fixture();a$ppi_reference<-ref;f<-do.call(run_scNPM,a)
     expect_identical(f$network_prior,"paired")
     expect_false(f$paired_prior$modules)
@@ -95,4 +96,16 @@ test_that("old independent prior remains selectable and invalid paired parameter
   expect_error(do.call(run_scNPM,a),"paired_discordance")
   a$paired_discordance<-.75;a$inference_mode<-"coupled"
   expect_error(do.call(run_scNPM,a),"requires staged")
+})
+
+test_that("1.1.1 uses union weights and never enables legacy feedback", {
+ a<-paired_fixture();f<-do.call(run_scNPM,a)
+ expect_identical(f$provenance$settings$ppi_reference,"union")
+ expect_equal(f$provenance$settings$edge_prob_adj,1)
+ expect_true(all(f$stage_history$feedback_active==0))
+ a$edge_prob_adj<-.75
+ expect_error(do.call(run_scNPM,a),"Legacy edge feedback was removed")
+ q<-paired_reference_weights(.05);u<-paired_reference_weights(.5,reference="union")
+ expect_equal(unname(u[2:4]/sum(u[2:4])),unname(q[2:4]/sum(q[2:4])))
+ expect_equal(u[2],u[3])
 })

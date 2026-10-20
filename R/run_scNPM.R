@@ -3,7 +3,7 @@
 #' Estimate condition-specific gene networks using staged stochastic inference.
 #' The default first adapts networks and matching, aligns component labels to
 #' fixed initial mean anchors, and freezes a complete mapping after sustained
-#' stability. It then disables counterpart feedback, completes post-switch
+#' stability. It then completes post-switch
 #' burn-in and retains samples under the selected final network prior. At the adaptation limit,
 #' the default freezes a recent consensus map and records that stability was not established.
 #'
@@ -43,11 +43,10 @@
 #' @param ssp_v1 Positive slab standard deviation.
 #' @param ssp_l Positive diagonal shrinkage parameter; the exponential-prior
 #'   rate for precision diagonals is `ssp_l / 2`.
-#' @param edge_prob_threshold Confidence threshold in (0.5, 1) for deciding
-#'   whether an edge receives matching feedback; this is separate from the
-#'   differential-network cutoff.
-#' @param edge_prob_adj Feedback multiplier in (0, 1]. A value of 1 leaves
-#'   baseline edge probabilities unchanged by matching feedback.
+#' @param edge_prob_threshold Legacy compatibility argument in (0.5, 1).
+#'   It no longer changes edge updates or differential selection.
+#' @param edge_prob_adj Legacy compatibility argument, required to be 1.
+#'   Counterpart edge feedback is removed in version 1.1.1.
 #' @param epsilon_theta Positive fixed HMC step size for latent expression.
 #' @param num_step_theta Positive integer number of HMC steps for latent expression.
 #' @param epsilon_lam Positive fixed HMC step size for dropout parameters.
@@ -64,16 +63,17 @@
 #' @param paired_discordance Positive factor at most 1 (default 0.75) controlling
 #'   discordant-state weights. With b=ppi_prior_low and d=paired_discordance*b*(1-b),
 #'   base weights for 00,10,01,11 are (1-b-d,d,d,b-d). It is not the fraction
-#'   of differential edges and is separate from adaptation's edge_prob_adj.
+#'   of differential edges.
 #' @param shared_edge_correlation Correlation in the bivariate slab kernel
 #'   for state 11, in [0,1), default 0.995. Larger values favor closer signed
 #'   precision coefficients for common edges; 10/01 remain uncorrelated.
-#' @param ppi_reference Condition supported by the PPI source: `control`
-#'   (default), `treatment`, or `both`. Let R be the odds of an edge's PPI
-#'   weight divided by the odds of ppi_prior_low. Multiply the base state
-#'   factor by R for each supported present condition, then normalize.
-#'   Choose both for condition-neutral PPI evidence; control reproduces the
-#'   control-derived PPI design. Ignored by the independent network prior.
+#' @param ppi_reference PPI weighting rule: `union` (default), `control`,
+#'   `treatment`, or `both`. Let R be the PPI odds divided by the odds of
+#'   ppi_prior_low. Union multiplies states 10, 01 and 11 by R once;
+#'   control multiplies 01/11; treatment multiplies 10/11; both multiplies
+#'   10/01 by R and 11 by R squared. Normalize the resulting state factors.
+#'   Union treats public PPI as evidence for a nonempty support state without
+#'   an extra shared-state multiplier. Ignored by the independent prior.
 #'
 #' @section Paired network prior:
 #' The four states are (treatment, control): 00, 10, 01, 11. Conditional
@@ -100,12 +100,12 @@
 #'   Used only with matching_score = "global". Pairwise regression uses
 #'   a fixed slope penalty of 0.001 times the total observation weight.
 #'
-#' @param inference_mode `staged` (default) or `coupled` (continuous feedback; use global scores and greedy matching for the earlier workflow).
+#' @param inference_mode `staged` (default) or `coupled` (continuously updated matching without freezing; uses the independent network prior).
 #' @param adapt_min Earliest freezing iteration. NULL uses min(100, floor(adapt_max/2)), at least 2.
 #' @param adapt_max Latest adaptation iteration. NULL uses min(3000, num_iter-num_save-final_burnin).
 #' @param freeze_patience Consecutive identical complete maps needed to freeze,
 #'   at least 2. NULL uses min(5, floor(adapt_max/2)), at least 2.
-#' @param final_burnin Minimum iterations after disabling feedback and before
+#' @param final_burnin Minimum iterations after freezing and before
 #'   retention. NULL uses min(1000, floor((num_iter-num_save)/3)), at least 1.
 #' @param diagnostic_every Positive interval for final-stage J_aug diagnostics;
 #'   adaptation diagnostics and matching histories are recorded every iteration.
@@ -219,7 +219,7 @@ run_scNPM <- function(
     ssp_v1 = 1,
     ssp_l = 1,
     edge_prob_threshold = 0.6,
-    edge_prob_adj = 0.75,
+    edge_prob_adj = 1,
     epsilon_theta = 0.2,
     num_step_theta = 20,
     epsilon_lam = 0.01,
@@ -243,7 +243,7 @@ run_scNPM <- function(
     progress_every = 60, progress_file = NULL,
     network_prior = c("auto", "paired", "independent"),
     paired_discordance = 0.75, shared_edge_correlation = 0.995,
-    ppi_reference = c("control", "both", "treatment")
+    ppi_reference = c("union", "control", "both", "treatment")
 ) {
   if (!is.logical(verbose) || length(verbose) != 1L || is.na(verbose))
     stop("verbose must be TRUE or FALSE.")
@@ -349,6 +349,7 @@ run_scNPM <- function(
   check_scalar(edge_prob_threshold, "edge_prob_threshold", 0.5, 1,
                lower_open = TRUE, upper_open = TRUE)
   check_scalar(edge_prob_adj, "edge_prob_adj", 0, 1, lower_open = TRUE)
+  if (edge_prob_adj != 1) stop("Legacy edge feedback was removed in scNPM 1.1.1; use edge_prob_adj = 1.")
   check_scalar(epsilon_theta, "epsilon_theta", 0, lower_open = TRUE)
   check_scalar(epsilon_lam, "epsilon_lam", 0, lower_open = TRUE)
   check_scalar(num_step_theta, "num_step_theta", 1, .Machine$integer.max, TRUE)
@@ -653,7 +654,7 @@ run_scNPM <- function(
     minimum_final_burnin=final_burnin,
     actual_final_burnin=if(inference_mode=="staged") num_iter-num_save-Result$frozen_at else NA_integer_,
     retained_start=num_iter-num_save+1L,retained_draws=num_save,
-    feedback_disabled_for_retained=inference_mode=="staged",
+    feedback_disabled_for_retained=TRUE,
     labeling=if(network_prior=="paired") "joint matched-pair assignment to fixed initial anchors after freezing" else if(inference_mode=="staged") "minimum squared-mean assignment to fixed initial anchors" else "legacy")
   fdr <- NULL
   if (differential_method=="bayes_fdr") {
@@ -855,7 +856,7 @@ run_scNPM <- function(
         reference_update = "current-matching-state",
         quadratic_form = if (network_covariates == "all_reference")
           "centered-shared-2K-references" else "uncentered",
-        continuous_feedback = inference_mode=="coupled",
+        continuous_feedback = FALSE,
         inference_mode = inference_mode, differential_method = differential_method,
         adapt_min=adapt_min,adapt_max=adapt_max,freeze_patience=freeze_patience,
         final_burnin=final_burnin,diagnostic_every=diagnostic_every,
