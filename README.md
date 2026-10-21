@@ -511,37 +511,54 @@ below. The positive-definite matrix constraint is part of the joint prior.
 # ppi_reference = "union"
 ```
 
-For each frozen pair and gene pair, S=(gamma_T,gamma_C) takes states
-00 (neither), 10 (treatment only), 01 (control only), 11 (both).
-Let b=ppi_prior_low and d=paired_discordance*b*(1-b). Base state factors are
-(1-b-d,d,d,b-d). For an edge with PPI weight pi, define
-R={pi/(1-pi)}/{b/(1-b)}. The default `ppi_reference="union"` multiplies
-10, 01 and 11 by R once. Public PPI supports a nonempty state without an
-additional multiplier for state 11. Control multiplies 01/11; treatment
-multiplies 10/11; both multiplies 10/01 by R and 11 by R squared.
-Normalize the factors. Missing PPI edges have R=1 and are not forced absent.
+After matching freezes, the prior jointly models each gene pair in the two
+matched networks using four states:
 
-The Gaussian coefficient kernels have covariance matrices
+| State | Edge interpretation | Effect on network coefficients |
+| --- | --- | --- |
+| `00` | Absent in both conditions | Shrinks both coefficients toward zero. |
+| `10` | Present only in treatment | Allows a treatment coefficient while shrinking the control coefficient. |
+| `01` | Present only in control | Allows a control coefficient while shrinking the treatment coefficient. |
+| `11` | Present in both conditions | Allows both coefficients and encourages similar signed values. |
 
-$$\Sigma_{00}=\operatorname{diag}(v_0^2,v_0^2),\quad
-\Sigma_{10}=\operatorname{diag}(v_1^2,v_0^2),\quad
-\Sigma_{01}=\operatorname{diag}(v_0^2,v_1^2),$$
-$$\Sigma_{11}=v_1^2\begin{pmatrix}1&r\\r&1\end{pmatrix}.$$
+Edge absence corresponds to the small-scale Gaussian component; edge presence
+corresponds to the large-scale component. The complete prior also requires
+both precision matrices to be positive definite.
 
-Here r=shared_edge_correlation; the default 0.995 strongly favors similar
-signed coefficients for shared edges. All factors define one globally normalized
-prior with positive-definite precision constraints. The model uses edge-level
-paired states and retains the existing observation-model HMC.
-The paired graph kernel integrates one treatment/control coefficient pair
-when drawing its state and immediately restores both coefficients.
+`ppi_prior_low` controls the baseline edge weight. `paired_discordance`
+controls the relative weight of condition-specific states: values below one
+favor shared presence or shared absence. `shared_edge_correlation` controls
+coefficient sharing in the jointly present state; its default of 0.995
+strongly favors similar signed coefficients.
 
-BFDR levels and tie handling are unchanged. A matched edge's p10/p01 now comes
-from this joint conditional, and group probabilities are p10+p11 or p01+p11.
-Matching freeze fixes cluster correspondence; the subsequent sampling stage
-estimates the paired network posterior.
+The default `ppi_reference = "union"` uses public PPI to support edge presence
+in either condition. It gives the same PPI multiplier to treatment-only,
+control-only and jointly present states, then normalizes the state weights.
+This preserves the relative weights of those three states. Gene pairs missing
+from PPI retain their baseline weights and can still be inferred from expression.
+
+Other PPI reference options support condition-specific information:
+
+| `ppi_reference` | How PPI changes the state weights |
+| --- | --- |
+| `"union"` | Supports all three edge-present states equally. |
+| `"control"` | Supports control-only and jointly present states. |
+| `"treatment"` | Supports treatment-only and jointly present states. |
+| `"both"` | Applies support separately to each condition, giving the jointly present state two PPI factors. |
+
+The sampler updates a paired edge state together with its two network
+coefficients, retaining the existing observation-model HMC. Posterior state
+probabilities provide treatment-only and control-only probabilities for
+directional differential selection. Each condition's overall edge probability
+adds its condition-only probability to the jointly present probability.
+
+BFDR levels and tie handling are unchanged. Matching freeze fixes cluster
+correspondence; the subsequent sampling stage estimates the paired network
+posterior.
 
 For formulae, assumptions and the error-bound proof, read
 [algorithm.md](inst/algorithm.md). This file is also installed in the
 package directory. Development repository:
 [taostat1/scNPM_R_package](https://github.com/taostat1/scNPM_R_package).
 License: GPL >= 3.
+
