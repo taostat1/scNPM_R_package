@@ -1,8 +1,5 @@
 # scNPM: Single-Cell Network Propensity Matching
 
-Version **1.1.1** estimates heterogeneous gene conditional-dependence networks
-and compares matched clusters across two conditions.
-
 ## Method overview
 
 ![scNPM workflow: data and priors, network propensity matching, frozen paired inference, and network contrasts](inst/figures/scNPM_workflow.svg)
