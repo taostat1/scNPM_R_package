@@ -1,0 +1,3 @@
+inst/extdata/*.tsv text eol=lf
+inst/extdata/retina_GSE137537/*.csv text eol=lf
+inst/extdata/retina_GSE137537/*.gz binary
