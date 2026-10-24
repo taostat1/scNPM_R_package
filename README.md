@@ -29,8 +29,8 @@ populations across two conditions.
 The workflow figure is supplied as [an SVG](inst/figures/scNPM_workflow.svg).
 Its retinal pathway panels illustrate the biological interpretation step.
 
-**Examples:** [Simulation](#quick-simulation-generate-fit-and-export) 路
-[Public retinal data](#example-matched-retinal-networks) 路
+**Examples:** [Simulation](#quick-simulation-generate-fit-and-export) ;
+[Public retinal data](#example-matched-retinal-networks) ;
 [Data sources and reuse](inst/extdata/DATA_SOURCES.md)
 
 ## Installation
