@@ -1,0 +1,93 @@
+# Public retinal example: sources, processing and reuse
+
+## Expression data and cell annotations
+
+**Original investigators:** Madhvi Menon, Shahin Mohammadi,
+Jose Davila-Velderrain and colleagues.
+
+**Publication:** Menon et al. (2019). *Single-cell transcriptomic atlas of the
+human retina identifies cell types associated with age-related macular
+degeneration*. Nature Communications **10**, 4902.
+[DOI: 10.1038/s41467-019-12780-8](https://doi.org/10.1038/s41467-019-12780-8).
+
+**Database:** NCBI Gene Expression Omnibus,
+[GSE137537](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE137537),
+the droplet-based human retina dataset. The paper's separate Seq-Well dataset,
+GSE137847, is not used in this example.
+
+The study profiled normal human retinas. This example compares **macular**
+cells (`treatment = 1`) with **peripheral** cells (`treatment = 0`).
+The historical `amd_workflow.R` filename describes the application context;
+the labels do not denote AMD patients and healthy controls.
+
+### What is distributed and what was changed
+
+The existing package dataset `data/top50_goal_gene_mt.RData` contains a
+stratified subset of 400 cells (200 per region) from the 20,091-cell analysis
+matrix. The scNPM example selects a 50-gene panel and retains the corresponding
+raw UMI counts, cell identifiers, region labels and QC covariates. These are
+processed inputs prepared for scNPM, not files authored by the original study.
+The RData also includes the 12,530-gene matrix for these same 400 cells.
+
+For direct inspection and use outside R, `retina_GSE137537/` contains:
+
+| File | Contents |
+| --- | --- |
+| `counts.csv.gz` | 50 genes by 400 cells; the first column gives gene symbols and remaining headers are cell identifiers. Raw UMI counts, without normalization or imputation. |
+| `cells.csv` | 400 rows in expression-column order: public cell identifier, region, group indicator, donor/sample identifiers and five existing QC measures. |
+| `genes.csv` | The 50 gene symbols in matrix-row order. |
+
+The QC measures are detected genes, total counts, endogenous-count percentage,
+mitochondrial-count percentage and the percentage in the 50 most abundant
+features. They come from the original full-transcriptome preprocessing;
+they must not be recalculated from only the 50 selected genes.
+
+The CSV export preserves the existing packaged subset exactly. All 20,000
+expression entries were checked against the corresponding entries of the
+full local analysis matrix on 2026-10-25. The cell identifiers and gene list
+specify the subset explicitly. `inst/examples/export_retinal_data.R`
+recreates the CSV export from the bundled RData. This is a compact workflow
+example, not the full retinal analysis reported in the manuscript.
+
+### Attribution and reuse
+
+Credit Menon et al. and cite **GSE137537** when using these data. Credit the
+scNPM authors for the subset preparation and workflow, and describe any
+further filtering or transformation you apply.
+
+The original [article and its included material](https://pmc.ncbi.nlm.nih.gov/articles/PMC6814749/)
+are published under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/),
+subject to its third-party credit lines. The separately deposited expression
+data are distributed through GEO under the
+[GEO data availability and reuse policy](https://www.ncbi.nlm.nih.gov/geo/info/disclaimer.html):
+NCBI places no restrictions on data use or distribution, while rights asserted
+by submitters remain applicable. The article's license is recorded separately
+from the GEO policy; the package's GPL license does not relicense third-party data.
+
+## Protein association reference
+
+`top50_string_interactions_short.tsv` is a gene-panel-specific export from
+[STRING](https://string-db.org/). It contains functional protein associations;
+an association need not represent direct physical binding.
+
+**Reference:** Szklarczyk et al. (2023). *The STRING database in 2023:
+protein-protein association networks and functional enrichment analyses for
+any sequenced genome of interest*. Nucleic Acids Research **51**(D1),
+D638-D646. [DOI: 10.1093/nar/gkac1000](https://doi.org/10.1093/nar/gkac1000).
+
+STRING data and download files are available under **CC BY 4.0**, as stated
+in the [STRING licensing policy](https://string-db.org/cgi/access?footer_active_subpage=licensing).
+Retain STRING attribution when redistributing the table. The packaged file
+is restricted to the example gene panel. scNPM uses positive `combined_score`
+values as an interaction indicator, rather than as a continuous prior weight.
+The original export does not record the STRING release or retrieval date;
+the checked-in file is the exact reference for reproducing this example.
+This documentation was verified on 2026-10-25; that is not the download date.
+
+## Code and generated results
+
+The example scripts are scNPM code under GPL (>= 3). Their synthetic inputs
+are generated by the supplied script and are not human data. Fitted networks
+and BFDR selections are outputs of scNPM, not annotations supplied by GEO,
+the original investigators or STRING. See `checksums.tsv` for SHA-256 hashes
+of the distributed input files.

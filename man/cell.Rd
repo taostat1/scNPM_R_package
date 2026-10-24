@@ -13,8 +13,11 @@ A data frame with 400 rows and 52 columns: cell barcodes
   percentage of counts in top features, mitochondrial percentage, etc.).
 }
 \source{
-Derived from a public single-cell RNA-seq study of human retinas
-  (see the scNPM reference publication).
+Menon et al. (2019), Nature Communications 10:4902,
+  \doi{10.1038/s41467-019-12780-8}; GEO \href{https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE137537}{GSE137537}.
+  Normal human retinas, macular versus peripheral regions.
+  Subset preparation and third-party reuse terms: installed file
+  \code{extdata/DATA_SOURCES.md}.
 }
 \usage{
 data(top50_goal_gene_mt)

@@ -10,8 +10,11 @@
 #'
 #' @format A \link[Matrix:dgTMatrix-class]{dgTMatrix} with 50 rows (genes) and
 #'   400 columns (cells); entries are raw UMI counts.
-#' @source Derived from a public single-cell RNA-seq study of human retinas
-#'   (see the scNPM reference publication).
+#' @source Menon et al. (2019), Nature Communications 10:4902,
+#'   \doi{10.1038/s41467-019-12780-8}; GEO \href{https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE137537}{GSE137537}.
+#'   Normal human retinas, macular versus peripheral regions.
+#'   Subset preparation and third-party reuse terms: installed file
+#'   \code{extdata/DATA_SOURCES.md}.
 #' @docType data
 #' @name goal_gene_mt
 #' @usage data(top50_goal_gene_mt)
@@ -32,8 +35,11 @@ NULL
 #'   coordinates (\code{x}, \code{y}), and \pkg{scater} quality-control metrics
 #'   (columns prefixed \code{scater_qc.}: library size, detected features,
 #'   percentage of counts in top features, mitochondrial percentage, etc.).
-#' @source Derived from a public single-cell RNA-seq study of human retinas
-#'   (see the scNPM reference publication).
+#' @source Menon et al. (2019), Nature Communications 10:4902,
+#'   \doi{10.1038/s41467-019-12780-8}; GEO \href{https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE137537}{GSE137537}.
+#'   Normal human retinas, macular versus peripheral regions.
+#'   Subset preparation and third-party reuse terms: installed file
+#'   \code{extdata/DATA_SOURCES.md}.
 #' @docType data
 #' @name cell
 #' @usage data(top50_goal_gene_mt)
@@ -49,8 +55,11 @@ NULL
 #'
 #' @format A \link[Matrix:dgTMatrix-class]{dgTMatrix} with 12530 rows (genes)
 #'   and 400 columns (cells); entries are raw UMI counts.
-#' @source Derived from a public single-cell RNA-seq study of human retinas
-#'   (see the scNPM reference publication).
+#' @source Menon et al. (2019), Nature Communications 10:4902,
+#'   \doi{10.1038/s41467-019-12780-8}; GEO \href{https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE137537}{GSE137537}.
+#'   Normal human retinas, macular versus peripheral regions.
+#'   Subset preparation and third-party reuse terms: installed file
+#'   \code{extdata/DATA_SOURCES.md}.
 #' @docType data
 #' @name mt
 #' @usage data(top50_goal_gene_mt)

@@ -3,6 +3,36 @@
 Version **1.1.1** estimates heterogeneous gene conditional-dependence networks
 and compares matched clusters across two conditions.
 
+## Method overview
+
+![scNPM workflow: data and priors, network propensity matching, frozen paired inference, and network contrasts](inst/figures/scNPM_workflow.svg)
+
+scNPM combines single-cell expression, measured cell covariates and protein
+association information to estimate networks and compare corresponding cell
+populations across two conditions.
+
+1. **Estimate and match.** A latent Gaussian mixture represents heterogeneous
+   expression and an observation model accounts for zeros. Distances to the
+   same network references and measured covariates enter pairwise propensity
+   models. One-to-one matching first minimizes the largest standardized mean
+   difference (SMD), then the total SMD. Networks have independent priors during
+   this adaptation stage.
+2. **Freeze and jointly estimate.** Once correspondence is frozen, each matched
+   pair uses four edge states: absent in both, treatment only, control only,
+   and present in both. The public-PPI `union` rule supports all three
+   edge-present states equally. Post-freeze warmup precedes retained sampling.
+3. **Report networks and contrasts.** Posterior state probabilities give
+   within-condition edge probabilities and treatment/control enrichment.
+   Bayesian false discovery rate (BFDR) selection produces the reported edges;
+   the output includes matching, balance, sampling and diagnostic summaries.
+
+The workflow figure is supplied as [an SVG](inst/figures/scNPM_workflow.svg).
+Its retinal pathway panels illustrate the biological interpretation step.
+
+**Examples:** [Simulation](#quick-simulation-generate-fit-and-export) 路
+[Public retinal data](#example-matched-retinal-networks) 路
+[Data sources and reuse](inst/extdata/DATA_SOURCES.md)
+
 ## Installation
 
 ### Install directly from GitHub
@@ -48,19 +78,165 @@ on Windows, use the Rtools release matching your R version.
 `repos = NULL`, install their dependencies first (listed in DESCRIPTION).
 Restart R before replacing a loaded installation.
 
+## Quick simulation: generate, fit and export
+
+[The complete simulation script](inst/examples/simulation_workflow.R) generates
+12 genes and 160 cells per condition, with two clusters in each condition.
+It constructs positive-definite precision matrices with shared and differential
+edges, samples latent Gaussian expression, and applies expression-dependent
+probit dropout. A simulated PPI reference includes missing and extra edges.
+The generated truth is saved alongside the inputs.
+
+Run the example after installation, in a fresh R session:
+
+```r
+# Set before loading scNPM; use 1 for a build without OpenMP.
+Sys.setenv(OMP_NUM_THREADS = "2")
+library(scNPM)
+source(system.file("examples", "simulation_workflow.R", package = "scNPM"))
+```
+
+To run it from a downloaded repository, use
+`source("inst/examples/simulation_workflow.R")` after installing scNPM.
+The script performs 1,200 iterations, retains 400 draws, and uses the paired
+prior with `ppi_reference = "union"`. It writes inputs/truth, `fit.rds`,
+matching, group and differential edge tables, the criterion trace, iteration
+progress and `sessionInfo.txt` to `scNPM_simulation_output/`.
+This small example demonstrates the workflow; it is not the paper's
+1,500- or 3,000-cell simulation benchmark. An empty differential selection
+is possible with this small sample and short run.
+
+<details>
+<summary>Show the complete simulation code (data generation and fitting)</summary>
+
+```r
+# Small, self-contained scNPM simulation: generate data, fit, and export results.
+# Run in a fresh R session. Set OMP_NUM_THREADS before starting R to choose threads.
+library(scNPM)
+stopifnot(packageVersion("scNPM") >= "1.1.1")
+set.seed(123)
+G <- 12L                         # genes
+K <- 2L                          # clusters per condition
+n_per_condition <- 160L          # 320 newly generated cells in total
+genes <- sprintf("Gene%02d", seq_len(G))
+
+# Symmetric, strictly diagonally dominant precision matrices are positive definite.
+make_precision <- function(edges) {
+  omega <- matrix(0, G, G, dimnames = list(genes, genes))
+  omega[edges] <- -0.35
+  omega <- omega + t(omega)
+  diag(omega) <- rowSums(abs(omega)) + 0.5
+  stopifnot(min(eigen(omega, symmetric = TRUE, only.values = TRUE)$values) > 0)
+  omega
+}
+edges1 <- cbind(1:5, 2:6)
+edges2 <- cbind(7:11, 8:12)
+omega_control <- list(make_precision(edges1), make_precision(edges2))
+omega_treatment <- list(
+  make_precision(rbind(edges1[-1, ], c(1, 6))),
+  make_precision(rbind(edges2[-1, ], c(7, 12)))
+)
+mu <- matrix(1.5, G, K)
+mu[1:6, 1] <- 3.5
+mu[7:12, 2] <- 3.5
+
+# Latent Gaussian expression, followed by expression-dependent probit dropout.
+# Observed values are nonnegative continuous expression, not UMI counts.
+generate_condition <- function(precision, prefix) {
+  labels <- sample(rep(seq_len(K), length.out = n_per_condition))
+  theta <- matrix(NA_real_, G, n_per_condition)
+  for (k in seq_len(K)) {
+    ix <- which(labels == k)
+    sigma <- solve(precision[[k]])
+    theta[, ix] <- mu[, k] + t(
+      matrix(rnorm(length(ix) * G), ncol = G) %*% chol(sigma)
+    )
+  }
+  x <- exp(theta)
+  x[matrix(runif(length(x)), G) < pnorm(1 - theta)] <- 0
+  dimnames(x) <- list(genes, paste0(prefix, seq_len(n_per_condition)))
+  list(x = x, labels = labels)
+}
+control <- generate_condition(omega_control, "C")
+treatment <- generate_condition(omega_treatment, "T")
+expression <- cbind(control$x, treatment$x)
+cell_t <- cbind(treatment = rep(0:1, each = n_per_condition),
+                measured_covariate = rnorm(2 * n_per_condition))
+rownames(cell_t) <- colnames(expression)
+
+# A simulated, imperfect PPI reference; it is not a downloaded biological network.
+support <- Reduce(`|`, lapply(c(omega_control, omega_treatment), function(x) x != 0))
+ppi_mask <- matrix(runif(G * G), G) < ifelse(support, 0.8, 0.05)
+ij <- which(upper.tri(ppi_mask) & ppi_mask, arr.ind = TRUE)
+ppi <- data.frame(node1 = genes[ij[, 1]], node2 = genes[ij[, 2]], combined_score = 1)
+out_dir <- getOption("scNPM.simulation_output", "scNPM_simulation_output")
+dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+saveRDS(list(expression = expression, cell_t = cell_t, ppi = ppi,
+             truth = list(control_precision = omega_control,
+                          treatment_precision = omega_treatment,
+                          control_labels = control$labels,
+                          treatment_labels = treatment$labels,
+                          correspondence = data.frame(T = 1:2, C = 1:2))),
+        file.path(out_dir, "simulated_inputs_and_truth.rds"))
+
+fit <- run_scNPM(
+  goal_gene_mt = expression, cell_t = cell_t, protein_input = ppi, K = K,
+  ds_seed = 123, num_iter = 1200, num_save = 400,
+  inference_mode = "staged", network_prior = "paired", ppi_reference = "union",
+  adapt_min = 100, adapt_max = 400, freeze_patience = 5,
+  final_burnin = 400, freeze_policy = "consensus",
+  matching_score = "pairwise", network_covariates = "all_reference",
+  matching_method = "lexicographic", differential_method = "bayes_fdr",
+  fdr_level = 0.05, group_fdr_level = 0.05,
+  fdr_scope = "frozen", fdr_rule = "delta_threshold",
+  verbose = TRUE, diagnostic_every = 10, progress_every = 30,
+  progress_file = file.path(out_dir, "iteration_progress.csv")
+)
+saveRDS(fit, file.path(out_dir, "fit.rds"))
+for (name in c("matching_result_df", "criterion_trace", "stage_history")) {
+  write.csv(fit[[name]], file.path(out_dir, paste0(name, ".csv")), row.names = FALSE)
+}
+write.csv(fit$group_fdr$selected, file.path(out_dir, "group_selected.csv"), row.names = FALSE)
+write.csv(fit$differential_fdr$selected, file.path(out_dir, "differential_selected.csv"), row.names = FALSE)
+write.csv(fit$differential_fdr$table, file.path(out_dir, "differential_all.csv"), row.names = FALSE)
+writeLines(capture.output(sessionInfo()), file.path(out_dir, "sessionInfo.txt"))
+print(fit$matching_result_df)
+print(fit$sampling_schedule)
+print(fit$group_fdr$summary)
+print(head(fit$differential_fdr$selected))
+```
+
+</details>
+
 ## Example: matched retinal networks
 
 The package includes a demonstration subset of **50 genes and 400 cells**:
 200 peripheral (control) and 200 macular (treatment) retinal cells. This example
-compares retinal regions; the treatment label does not mean that all macular
-cells are diseased. The subset illustrates the workflow and does not reproduce
+compares macular and peripheral regions in normal human retinas. The subset illustrates the workflow and does not reproduce
 the full-data results in the paper.
 
+
+**Data source:** [GEO GSE137537](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE137537),
+Menon et al. (2019), *Nature Communications* 10:4902,
+[doi:10.1038/s41467-019-12780-8](https://doi.org/10.1038/s41467-019-12780-8).
+The original study profiled normal human retinas. Credit the original authors
+and accession when using the example. Public data and third-party resources
+retain their source terms; see the
+[full attribution, processing and reuse record](inst/extdata/DATA_SOURCES.md).
+The STRING reference uses [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
+The subset is already installed with the package. It is also available as
+[compressed counts](inst/extdata/retina_GSE137537/counts.csv.gz),
+[cell metadata](inst/extdata/retina_GSE137537/cells.csv) and
+[a gene list](inst/extdata/retina_GSE137537/genes.csv).
+These files preserve the packaged data and require no GEO download to run.
+
 The complete script is [inst/examples/amd_workflow.R](inst/examples/amd_workflow.R).
-After installation, locate it with:
+After installation, run it in a fresh R session with:
 
 ```r
-system.file("examples", "amd_workflow.R", package = "scNPM")
+Sys.setenv(OMP_NUM_THREADS = "2")
+source(system.file("examples", "amd_workflow.R", package = "scNPM"))
 ```
 
 ### 1. Prepare expression, covariates and protein interactions
@@ -564,3 +740,4 @@ For formulae, assumptions and the error-bound proof, read
 package directory. Development repository:
 [taostat1/scNPM_R_package](https://github.com/taostat1/scNPM_R_package).
 License: GPL >= 3.
+

@@ -1,7 +1,11 @@
-# Complete retinal example for the scNPM 1.1.0.
+# Public retinal example: Menon et al. (2019), Nature Communications 10:4902.
+# GEO GSE137537; doi:10.1038/s41467-019-12780-8.
+# Regional comparison of normal human retinas; not AMD cases versus controls.
+# Data sources and reuse terms: inst/extdata/DATA_SOURCES.md.
 # This script runs MCMC; set the working directory for its output folder.
 
 library(scNPM)
+stopifnot(packageVersion("scNPM") >= "1.1.1")
 data("top50_goal_gene_mt", package = "scNPM")
 expression <- as.matrix(goal_gene_mt)
 stopifnot(identical(as.character(cell$Barcode), colnames(expression)))
@@ -25,12 +29,12 @@ ppi <- system.file("extdata", "top50_string_interactions_short.tsv",
                    package = "scNPM")
 stopifnot(nzchar(ppi))
 
-out_dir <- "scNPM_example_output"
+out_dir <- getOption("scNPM.retinal_output", "scNPM_example_output")
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 fit <- run_scNPM(
   goal_gene_mt = expression, cell_t = cell_t, protein_input = ppi, K = 4,
-  network_prior = "paired", ppi_reference = "both", # condition-neutral STRING PPI
+  network_prior = "paired", ppi_reference = "union", # public STRING PPI
   num_iter = 5000, num_save = 1000,
   inference_mode = "staged", adapt_min = 100, adapt_max = 3000,
   freeze_patience = 5, final_burnin = 1000,
