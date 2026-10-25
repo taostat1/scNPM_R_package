@@ -58,7 +58,7 @@ Unzip it, then install the extracted package directory:
 remotes::install_local("path/to/scNPM_R_package-main", upgrade = "never")
 ```
 
-The GitHub ZIP contains source code; it is not an R Windows binary package.
+The GitHub ZIP contains the R package source code.
 For a separately supplied package archive, use:
 
 ```r
@@ -99,9 +99,7 @@ The script performs 1,200 iterations, retains 400 draws, and uses the paired
 prior with `ppi_reference = "union"`. It writes inputs/truth, `fit.rds`,
 matching, group and differential edge tables, the criterion trace, iteration
 progress and `sessionInfo.txt` to `scNPM_simulation_output/`.
-This small example demonstrates the workflow; it is not the paper's
-1,500- or 3,000-cell simulation benchmark. An empty differential selection
-is possible with this small sample and short run.
+This small example demonstrates data generation, model fitting and result export.
 
 <details>
 <summary>Show the complete simulation code (data generation and fitting)</summary>
@@ -209,8 +207,7 @@ print(head(fit$differential_fdr$selected))
 
 The package includes a demonstration subset of **50 genes and 400 cells**:
 200 peripheral (control) and 200 macular (treatment) retinal cells. This example
-compares macular and peripheral regions in normal human retinas. The subset illustrates the workflow and does not reproduce
-the full-data results in the paper.
+compares macular and peripheral regions in normal human retinas and illustrates the workflow.
 
 
 **Data source:** [GEO GSE137537](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE137537),
@@ -298,18 +295,17 @@ iteration 3000, leaving at least 1000 final-model warmup sweeps. Five consecutiv
 identical complete maps allow an earlier stable freeze. At the adaptation cap,
 the default uses the most frequent recent valid map and
 continues warmup and sampling. Inspect `fit$sampling_schedule$freeze_reason`
-(`stable` or `budget_consensus`) and `matching_stable`; a budget freeze is not
-evidence that correspondence or the MCMC chain has converged. With no valid
-complete map, invalid input, or a numerical error, the run still stops.
+(`stable` or `budget_consensus`) and `matching_stable` for the freezing rule
+and matching stability. The run stops if no valid complete map is available,
+the input is invalid, or a numerical error occurs.
 Use `freeze_policy = "error"` for the original strict stability requirement.
 
 `matching_score = "pairwise"` fits a balanced, five-fold ridge propensity
 regression for every candidate cluster pair using the **known** condition
 labels. It retains the shared network references, scalar score SMD, and
 one-to-one maximum-SMD-then-total-SMD assignment. Each pair has a distinct
-conditional score; these scores do not form one global population propensity
-score. Network features are estimated from the current full state; only the
-score regression is cross-fitted. `matching_score = "global"` retains the
+conditional score. Network features are estimated from the current full state,
+and the score regression is cross-fitted. `matching_score = "global"` retains the
 previous pooled score, and can be combined with `network_covariates = "legacy"`
 and `matching_method = "greedy"` when reproducing older workflows.
 
@@ -338,11 +334,10 @@ fit$smd_covariate_results              # QC and network-feature balance
 
 A row of `differential_fdr$selected` is one unordered gene pair in one matched
 cluster comparison. `direction = "treatment"` or `"control"` names the enriched
-condition, not a causal direction between the genes. `delta_p` is
+condition. `delta_p` is
 `p_treatment_only - p_control_only`; `error_bound` is the estimated error used
-in selection. The selected-set mean, rather than every individual row, is
-required to be at most 0.05. An empty selection is a valid outcome; the returned
-mean of zero for an empty set does not indicate evidence for differential edges.
+in selection. The mean error across the selected set is required to be at
+most 0.05. An empty selection is returned with a mean error of zero.
 
 ### 4. Export tables, diagnostics and network plots
 
@@ -437,8 +432,8 @@ BFDR calculation. Selection takes place on the full panel; use the saved mask
 when extracting subnetworks or calculating gene-panel sensitivity.
 
 `edge_treat_est` and `edge_ctrl_est` remain empirical allocation-frequency
-arrays for compatibility. They are not the new BFDR masks. A raw matrix passed
-to `plot_group_network()` without a saved mask raises an informative error.
+arrays for compatibility. BFDR plots use the saved selection masks. A raw matrix passed
+to `plot_group_network()` without a saved mask raises an error.
 The former descriptive plot remains available explicitly:
 
 ```r
@@ -456,8 +451,7 @@ plot_group_network(fit$group_fdr$networks$treatment_1)
 ```
 
 The selector reconstructs the marginal means using `p10 + p11` for treatment
-and `p01 + p11` for control, checks consistency across counterparts, and does
-not substitute empirical allocation frequencies for those probabilities.
+and `p01 + p11` for control, and checks consistency across counterparts.
 
 ### Files written by the example
 
@@ -506,15 +500,15 @@ Runtime, dimensions, stages and diagnostic values are returned in the result.
    selected final network prior. The default jointly samples four edge states
    for matched pairs. Finish at least `final_burnin` iterations before retaining
    the last `num_save` draws. Matched components are relabeled together so their
-   partners are preserved. The frozen mapping is not reoptimized.
+   partners and the frozen mapping are preserved.
 4. Select group edges separately for each condition/subtype using marginal
    posterior errors. Select directional differential edges from final-stage joint edge-state
    probabilities, across all K clusters as one family.
 
 The default final target uses a four-state paired network prior. The matching
 determines which networks share this prior. Set `network_prior = "independent"`
-to retain the 1.0.8 final network model. Existing fits cannot be converted to
-the new posterior by changing selection thresholds; rerun sampling.
+to retain the 1.0.8 final network model. Switching network priors requires
+a new sampling run.
 
 The observation model is unchanged: positive values fix latent expression at
 log X; zero values have sampled latent expression. HMC uses fixed step sizes,
@@ -554,24 +548,23 @@ The complete retinal example above constructs these inputs and runs the staged a
 
 Budgets satisfy `adapt_min <= adapt_max` and
 `adapt_max + final_burnin <= num_iter - num_save`. Earlier freezing gives a
-longer actual final burn-in; it does not move the retained window. Defaults
-resolve from this available pre-retention budget; see `?run_scNPM`. Stability
-of the matching and completion of a burn-in budget are separate from MCMC
-convergence. Examine multiple chains and the retained diagnostic traces.
+longer actual final burn-in while keeping the retained window fixed. Defaults
+resolve from this available pre-retention budget; see `?run_scNPM`. Assess MCMC
+convergence using multiple chains and the retained diagnostic traces.
 
 ## Differential edges and error interpretation
 
 For a treatment cluster k and an unordered gene pair, a treatment-direction
 claim means slab allocation in k and spike allocation in its control
-counterpart. A control-direction claim means the reverse. These are continuous
-spike-and-slab states, not exact zero precision entries or gene absence.
+counterpart. A control-direction claim means the reverse. These states refer
+to the small- and large-scale components of the continuous spike-and-slab prior.
 
 The package averages joint four-state conditional probabilities for frozen
 pairs. For other counterparts it averages within-draw products of conditional
 marginals under the same frozen-pair model. The independent option uses
-within-draw products for every pair. Neither multiplies posterior mean edge
-frequencies. All-counterpart sensitivity does not refit alternative paired priors. The more supported
-direction under the frozen pairing supplies the reported direction.
+within-draw products for every pair. All-counterpart sensitivity uses the same
+fitted paired model. The more supported direction under the frozen pairing
+supplies the reported direction.
 
 - `fdr_scope = "frozen"` (default): use errors for the frozen counterpart.
 - `fdr_scope = "all_matchings"`: sensitivity analysis using the largest error
@@ -591,14 +584,11 @@ is strictly `>`. The plot uses selection masks and does not apply +/-0.5 again.
 `fdr_rule = "posterior_error"` retains the error-sorted prefix from 1.0.4.
 There is one direction per unordered edge and treatment cluster, with all K
 clusters sharing one budget. Below `fdr_min_draws` (default 200), return the
-exploratory curve but no threshold discoveries. This minimum is not a mixing
-guarantee. The batch MCSE is a diagnostic, not a confidence bound.
+exploratory curve but no threshold discoveries. The batch MCSE summarizes
+Monte Carlo variability.
 
 This is an estimated **posterior expected directional FDP**, conditional on the
-selected final model and label convention. A target of 0.05 is not a uniform
-frequentist 5% guarantee across fixed network configurations, donors, model
-misspecification or incomplete mixing. Donor dependence is not modeled by adding a donor
-column to the propensity model.
+selected final model and label convention.
 
 ```r
 conditional <- select_differential_edges(fit, scope = "frozen")
@@ -609,25 +599,22 @@ conservative <- select_differential_edges(fit, scope = "all_matchings")
 
 `criterion_trace` records `log_augmented_likelihood`, `network_prior_kernel`,
 `matching_loss` and their combination `J_aug = likelihood + prior - loss`.
-The likelihood includes sampled missing latent expression and component labels;
-it is not the integrated observed-data likelihood. The prior column is a
-state-wise network factor, not the complete posterior density. SMDs are
+The augmented likelihood includes sampled missing latent expression and
+component labels. The prior column records the state-wise network factor. SMDs are
 recomputed against the frozen map after the switch. Undefined SMDs produce NA
 loss/criterion values. Changes in stages also change the prior factor.
 
-This trace describes interactions between modules. It does not define a joint
-optimization objective. Random draws can decrease any of these values; no
-updates are rejected merely because J_aug decreases. Global matching optimizes
-(maximum SMD, total SMD) for the current cost matrix, not a common objective
-across sampling iterations. Freezing preserves that map as costs change.
+This trace describes interactions between modules and records stochastic
+variation across iterations. Global matching optimizes (maximum SMD, total SMD)
+for the current cost matrix. Freezing preserves that map as costs change.
 
 ## Compatibility and outputs
 
 Use `inference_mode = "coupled", differential_method = "frequency",
 matching_method = "greedy"` for the
 earlier matching workflow, with legacy edge feedback removed. Its +/-0.5 selections are descriptive.
-Posterior error selection rejects coupled-mode results. Old and new draws
-must not be pooled. K=4 still has four clusters per condition, not eight.
+Posterior error selection uses staged-mode results. Keep draws from different
+models separate. K=4 specifies four clusters per condition.
 
 The returned list contains the following commonly used results:
 
