@@ -20,3 +20,8 @@ Thumbs.db
 # Build artefacts
 *.tar.gz
 *.zip
+
+# Simulation outputs
+/paper_simulation_output/
+/paper_reference_summary/
+**/__pycache__/
