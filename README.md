@@ -1,29 +1,32 @@
-# scNPM: Single-Cell Network Propensity Matching
+# scNPM: Single-Cell Network Propensity Matching for Comparative Analysis of Heterogeneous Gene Regulatory Networks
 
 ## Method overview
 
-![scNPM workflow: data and priors, network propensity matching, frozen paired inference, and network contrasts](inst/figures/scNPM_workflow.svg)
+![scNPM workflow: data and priors, alternating network estimation and matching, mapping freeze, paired network sampling, and network contrasts](inst/figures/scNPM_workflow.svg)
 
-scNPM combines single-cell expression, measured cell covariates and protein
-association information to estimate networks and compare corresponding cell
-populations across two conditions.
+scNPM combines single-cell expression, observed cell covariates and protein
+association information to compare gene networks across corresponding cell
+populations. Precision matrices describe undirected conditional dependence
+networks. Each condition has K latent subtypes, linked by a one-to-one mapping.
 
-1. **Estimate and match.** A latent Gaussian mixture represents heterogeneous
-   expression and an observation model accounts for zeros. Distances to the
-   same network references and measured covariates enter pairwise propensity
-   models. One-to-one matching first minimizes the largest standardized mean
-   difference (SMD), then the total SMD. Networks have independent priors during
-   this adaptation stage.
-2. **Freeze and jointly estimate.** Once correspondence is frozen, each matched
-   pair uses four edge states: absent in both, treatment only, control only,
-   and present in both. The public-PPI `union` rule supports all three
-   edge-present states equally. Post-freeze warmup precedes retained sampling.
-3. **Report networks and contrasts.** Posterior state probabilities give
-   within-condition edge probabilities and treatment/control enrichment.
-   Bayesian false discovery rate (BFDR) selection produces the reported edges;
-   the output includes matching, balance, sampling and diagnostic summaries.
+1. **Data and priors.** Expression matrices, observed cell covariates and a
+   protein interactome provide the inputs. A latent Gaussian mixture describes
+   cellular heterogeneity, and an expression-dependent observation model
+   accounts for zeros. Protein associations supply network prior weights.
+2. **Matching guided network inference.** Network estimation and NPM alternate
+   under independent network priors. Shared network references and pair-specific
+   propensity scores determine a complete subtype correspondence. Matching first
+   minimizes the largest standardized mean difference (SMD), then the total SMD.
+   After the mapping freezes, four-state paired updates estimate shared and
+   condition-specific edges. Samples are retained after a further warmup.
+   A diagnostic criterion tracks network fit and matching cost across iterations.
+3. **Group and differential network identification.** Retained posterior state
+   probabilities give group-network edge probabilities and treatment/control
+   contrasts. Bayesian false discovery rate (BFDR) selection determines the
+   reported edges. The real-data analyses use a target of 0.05.
 
-The workflow figure is supplied as [an SVG](inst/figures/scNPM_workflow.svg).
+The workflow figure is supplied as [an SVG](inst/figures/scNPM_workflow.svg)
+and [a PDF](inst/figures/scNPM_workflow.pdf).
 Its retinal pathway panels illustrate the biological interpretation step.
 
 **Examples:** [Simulation](#manuscript-simulation) ;
@@ -197,8 +200,8 @@ and matching stability. The run stops if no valid complete map is available,
 the input is invalid, or a numerical error occurs.
 Use `freeze_policy = "error"` for the original strict stability requirement.
 
-`matching_score = "pairwise"` fits a balanced, five-fold ridge propensity
-regression for every candidate cluster pair using the **known** condition
+`matching_score = "pairwise"` fits a balanced ridge propensity regression with
+up to five cross-fitting folds for every candidate cluster pair using the known condition
 labels. It retains the shared network references, scalar score SMD, and
 one-to-one maximum-SMD-then-total-SMD assignment. Each pair has a distinct
 conditional score. Network features are estimated from the current full state,
@@ -380,27 +383,30 @@ including C++ progress, use R message conditions and can also be suppressed
 with `suppressMessages()`. Warnings and errors retain their normal behavior.
 Runtime, dimensions, stages and diagnostic values are returned in the result.
 
-## The default staged algorithm
+## Matching Guided Network Inference
 
-1. Update latent expression, mixture and network states; recompute NPM without counterpart edge feedback.
-   Align component labels to fixed initial mean anchors. The NPM matching is a
+1. **Alternating adaptation.** Update latent expression, mixture parameters and
+   network states under independent edge priors, then recompute NPM.
+   Relabel subtypes using their initial means as references. The NPM matching is a
    complete assignment minimizing maximum cluster propensity-score SMD, then total SMD.
    Exact ties use a fixed traversal; no SMD cap is applied.
-2. Freeze a complete bijection after `freeze_patience` consecutive identical
+2. **Mapping freeze.** Fix the complete bijection as $\hat\phi$ after
+   `freeze_patience` consecutive identical
    assignments, no earlier than `adapt_min`. Every cluster must be nonempty at
    these checks. At `adapt_max`, `freeze_policy = "consensus"` selects the most
    frequent complete map in the last `freeze_window` valid states. Ties use
    maximum cost, then total cost, on the window's average cost matrix, followed
    by lexicographic map order. `freeze_policy = "error"` requests the previous
    strict rule. The schedule records which freezing rule was used.
-3. From the next iteration, activate the
+3. **Paired network sampling.** From the next iteration, activate the
    selected final network prior. The default jointly samples four edge states
    for matched pairs. Finish at least `final_burnin` iterations before retaining
    the last `num_save` draws. Matched components are relabeled together so their
    partners and the frozen mapping are preserved.
-4. Select group edges separately for each condition/subtype using marginal
-   posterior errors. Select directional differential edges from final-stage joint edge-state
-   probabilities, across all K clusters as one family.
+
+After sampling, select group edges separately for each condition and subtype
+using marginal posterior errors. Select differential edges from the joint
+edge-state probabilities, with all K matched subtype pairs forming one family.
 
 The default final target uses a four-state paired network prior. The matching
 determines which networks share this prior. Set `network_prior = "independent"`
@@ -411,21 +417,52 @@ The observation model is unchanged: positive values fix latent expression at
 log X; zero values have sampled latent expression. HMC uses fixed step sizes,
 fixed leapfrog counts and Metropolis acceptance correction.
 
-## Network propensity covariates
+## Network Propensity Matching (NPM)
 
-For every cell in either condition, the default uses centered distances to all
-2K current reference networks, ordered T1,...,TK,C1,...,CK:
+For cell i in condition d, each network covariate is a squared Mahalanobis
+distance to a reference subtype:
 
-Each covariate is a squared Mahalanobis distance: the cell's latent expression
-is centered at the reference cluster mean, then weighted by that network's
-precision matrix. Both conditions use the same reference networks, so their
-features are directly comparable.
+$$
+q_{i,(d',r)}^d=(\theta_i^d-\mu_r^{d'})^\top\Omega_r^{d'}(\theta_i^d-\mu_r^{d'}),
+\qquad d'\in\{\mathcal T,\mathcal C\},\quad r\in\{1,\ldots,K\}.
+$$
 
-K = 4 therefore uses eight network covariates. These and the optional QC
-covariates enter the logistic propensity model. With the default pairwise
-scores, each candidate cluster pair has a separate regression. Predictor
-scaling is learned in each training fold, the two conditions have equal total
-weight, and the slope penalty is 0.001 times the total observation weight.
+Here, the latent expression is centered at the reference mean and weighted by
+its precision matrix. Both conditions use the same 2K references, ordered
+T1,...,TK,C1,...,CK. The vector $\mathbf q_i$ collects these distances, and
+$\mathbf v_i=[\mathbf w_i^\top,\mathbf q_i^\top]^\top$ adds the observed
+covariates. For K = 4, there are eight network covariates.
+
+For every candidate treatment/control subtype pair (k,c), a separate
+cross-fitted ridge logistic model estimates the probability of treatment
+membership:
+
+$$
+\log\frac{p_{i,kc}}{1-p_{i,kc}}
+=\beta_{0,kc}+\widetilde{\mathbf v}_{i,kc}^{\top}\boldsymbol\beta_{kc}.
+$$
+
+The scaled predictors $\widetilde{\mathbf v}_{i,kc}$ use centers and scales
+learned from the training fold. The two conditions have equal total training
+weight, and the slope penalty is 0.001 times that weight. Held-out scores give
+the cost for each candidate pair:
+
+$$
+\operatorname{SMD}_{kc}
+=\frac{|\bar p_{kc}^{\mathcal T}-\bar p_{kc}^{\mathcal C}|}
+{\sqrt{(\sigma_{kc}^{\mathcal T}+\sigma_{kc}^{\mathcal C})/2}}.
+$$
+
+Here, $\bar p_{kc}^d$ and $\sigma_{kc}^d$ are the score mean and variance
+within that pair and condition. NPM selects a complete mapping $\phi$ by
+minimizing the largest pair cost first, then the total cost:
+
+$$
+\bigl(B(\phi),S(\phi)\bigr)
+=\left(\max_k\operatorname{SMD}_{k,\phi(k)},
+\sum_{k=1}^{K}\operatorname{SMD}_{k,\phi(k)}\right).
+$$
+
 With `matching_score = "global"`, predictors use pooled scaling and
 `propensity_ridge = 1e-6` stabilizes the pooled IRLS fit. Constant columns become
 zero. `network_covariates = "legacy"` requests the original assigned-network,
@@ -449,7 +486,51 @@ longer actual final burn-in while keeping the retained window fixed. Defaults
 resolve from this available pre-retention budget; see `?run_scNPM`. Assess MCMC
 convergence using multiple chains and the retained diagnostic traces.
 
-## Differential edges and error interpretation
+## Group and Differential Network Identification
+
+For a frozen matched gene pair $e=(k,j,t)$ with $j<t$, the joint state is
+$S_e=(z_{k,jt}^{\mathcal T},z_{\hat\phi(k),jt}^{\mathcal C})$.
+Posterior state probabilities are estimated by averaging the conditional
+probabilities over M retained samples:
+
+$$
+\widehat p_{e,s}=\frac{1}{M}\sum_{a=1}^{M}
+\Pr(S_e=s\mid\boldsymbol\omega_e^{(a)}),
+\qquad s\in\{s_{00},s_{10},s_{01},s_{11}\}.
+$$
+
+Here, $\boldsymbol\omega_e$ contains the two matched precision entries.
+The marginal slab probabilities are
+$\widehat p_{k,jt}^{\mathcal T}=\widehat p_{e,s_{10}}+\widehat p_{e,s_{11}}$
+and
+$\widehat p_{\hat\phi(k),jt}^{\mathcal C}=\widehat p_{e,s_{01}}+\widehat p_{e,s_{11}}$.
+Each group network retains the largest probability-threshold set whose mean
+error $1-\widehat p_{k,jt}^d$ is at most $\alpha_F=0.05$, keeping ties together.
+
+For differential selection, write
+$\widehat p_e^{10}=\widehat p_{e,s_{10}}$ and
+$\widehat p_e^{01}=\widehat p_{e,s_{01}}$. The contrast and directional error are
+
+$$
+\widehat{\Delta P}_e=\widehat p_e^{10}-\widehat p_e^{01},
+\qquad
+\widehat\ell_e=1-\max\{\widehat p_e^{10},\widehat p_e^{01}\}.
+$$
+
+Positive contrasts indicate treatment enrichment; negative contrasts indicate
+control enrichment. For $\mathcal S(\tau)=\{e:|\widehat{\Delta P}_e|>\tau\}$,
+the estimated BFDR is
+
+$$
+\widehat{\operatorname{BFDR}}(\tau)=
+\frac{\sum_{e\in\mathcal S(\tau)}\widehat\ell_e}
+{\max\{1,|\mathcal S(\tau)|\}}.
+$$
+
+The selected set is the largest complete contrast-threshold set satisfying
+the target across all $K\binom G2$ gene-pair/subtype comparisons. The manuscript
+uses $\alpha_F=0.05$ for both group and differential networks; the package
+settings are `group_fdr_level` and `fdr_level`, respectively.
 
 For a treatment cluster k and an unordered gene pair, a treatment-direction
 claim means slab allocation in k and spike allocation in its control
@@ -492,7 +573,27 @@ conditional <- select_differential_edges(fit, scope = "frozen")
 conservative <- select_differential_edges(fit, scope = "all_matchings")
 ```
 
-## Criterion diagnostics
+## Diagnostic Criterion
+
+The diagnostic criterion follows the manuscript notation:
+
+$$
+\begin{aligned}
+\mathcal J_{\mathrm{aug}}^{(l)}={}&
+\log p(\mathbf X,\boldsymbol\theta_{\mathrm{mis}},\mathbf C
+\mid\boldsymbol\pi,\boldsymbol\mu,\boldsymbol\Omega,\boldsymbol\Lambda)\\
+&+\log\widetilde p(\mathbf z,\boldsymbol\Omega\mid\boldsymbol\xi)
+-\mathcal L_{\mathrm{match}}(\phi^{(l)}),
+\end{aligned}
+$$
+
+where
+$\mathcal L_{\mathrm{match}}(\phi^{(l)})=S(\phi^{(l)})=\sum_{k=1}^{K}\operatorname{SMD}_{k,\phi^{(l)}(k)}$.
+Here, $\boldsymbol\theta_{\mathrm{mis}}$ contains latent expressions for zero
+observations, $\mathbf C$ contains subtype labels, and
+$\boldsymbol\Lambda=\{(\lambda_{g,0},\lambda_{g,1}):g=1,\ldots,G\}$ contains
+the shared dropout parameters. The three terms record the augmented-data
+log likelihood, network prior kernel and total matching cost.
 
 `criterion_trace` records `log_augmented_likelihood`, `network_prior_kernel`,
 `matching_loss` and their combination `J_aug = likelihood + prior - loss`.
@@ -501,9 +602,8 @@ component labels. The prior column records the state-wise network factor. SMDs a
 recomputed against the frozen map after the switch. Undefined SMDs produce NA
 loss/criterion values. Changes in stages also change the prior factor.
 
-This trace describes interactions between modules and records stochastic
-variation across iterations. Global matching optimizes (maximum SMD, total SMD)
-for the current cost matrix. Freezing preserves that map as costs change.
+The criterion monitors the alternating stochastic updates. The mapping freezes
+by the stability or adaptation-budget rule, and retained samples follow a further warmup.
 
 ## Compatibility and outputs
 
@@ -556,11 +656,12 @@ use Rao-Blackwellization. Raw draws remain in `Result`.
 The baseline PPI inclusion weight is
 `ppi_prior_low + (ppi_prior_high - ppi_prior_low) * protein_adjacency`, with
 defaults 0.05 and 0.5. During adaptation and in independent-prior mode these
-are inclusion weights. The paired prior uses their odds ratios as described
-below. The positive-definite matrix constraint is part of the joint prior.
+are baseline prior factors before the positive-definite restriction. The paired
+prior uses their odds ratios as described below. Both models include the
+positive-definite matrix constraint in the joint prior.
 
 
-## Four-state matched-network prior in 1.1.1
+## Four-State Paired Network Prior
 
 ```r
 # These settings are also recorded in fit$paired_prior and fit$provenance.
@@ -576,10 +677,10 @@ matched networks using four states:
 
 | State | Edge interpretation | Effect on network coefficients |
 | --- | --- | --- |
-| `00` | Absent in both conditions | Shrinks both coefficients toward zero. |
-| `10` | Present only in treatment | Allows a treatment coefficient while shrinking the control coefficient. |
-| `01` | Present only in control | Allows a control coefficient while shrinking the treatment coefficient. |
-| `11` | Present in both conditions | Allows both coefficients and encourages similar signed values. |
+| $s_{00}$ | Absent in both conditions | Shrinks both coefficients toward zero. |
+| $s_{10}$ | Present only in treatment | Allows a treatment coefficient while shrinking the control coefficient. |
+| $s_{01}$ | Present only in control | Allows a control coefficient while shrinking the treatment coefficient. |
+| $s_{11}$ | Present in both conditions | Allows both coefficients and encourages similar signed values. |
 
 Edge absence corresponds to the small-scale Gaussian component; edge presence
 corresponds to the large-scale component. The complete prior also requires
@@ -596,6 +697,29 @@ in either condition. It gives the same PPI multiplier to treatment-only,
 control-only and jointly present states, then normalizes the state weights.
 This preserves the relative weights of those three states. Gene pairs missing
 from PPI retain their baseline weights and can still be inferred from expression.
+
+In the manuscript notation, the baseline edge weight is
+
+$$
+\xi_{jt}=\xi_{\mathrm{low}}+
+(\xi_{\mathrm{high}}-\xi_{\mathrm{low}})Z_{\mathrm{protein},jt}.
+$$
+
+Set $b=\xi_{\mathrm{low}}$, $\nu=\eta b(1-b)$ and
+$\mathbf q^{(0)}=(1-b-\nu,\nu,\nu,b-\nu)$ in the state order above.
+The union rule uses
+
+$$
+R_{jt}=\frac{\xi_{jt}(1-b)}{b(1-\xi_{jt})},
+\qquad
+q_{jt,s}=\frac{q_s^{(0)}R_{jt}^{\mathbb I(s\ne s_{00})}}
+{q_{s_{00}}^{(0)}+R_{jt}\sum_{h\ne s_{00}}q_h^{(0)}}.
+$$
+
+These $q_{jt,s}$ are the state weights in the paired prior. The parameter
+$\eta$ is `paired_discordance`, and the shared-state correlation r is
+`shared_edge_correlation`. Their defaults match the manuscript:
+$\eta=0.75$ and $r=0.995$.
 
 Other PPI reference options support condition-specific information:
 
